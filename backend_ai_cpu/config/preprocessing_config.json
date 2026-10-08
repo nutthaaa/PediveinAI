@@ -1,0 +1,135 @@
+{
+  "protocol_version": "PEDIVEIN_PREPROC_V1.1",
+  "freeze_date": "2026-09-16 16:55:26",
+  "project": "Pedivein Care AI",
+  "primary_task": "Binary classification: Infiltration vs Phlebitis",
+  "data_split": {
+    "verified_split_file": "not included in deployment package",
+    "verified_split_column": "dataset_partition",
+    "development_expected": 163,
+    "locked_test_expected": 41,
+    "total_expected": 204
+  },
+  "step_06_workspace": {
+    "status": "FROZEN",
+    "raw_data_modified": false
+  },
+  "step_07_arm_detection": {
+    "status": "FROZEN",
+    "version": "V1.1",
+    "method": "Grounding DINO open-vocabulary arm candidate detection",
+    "model": "IDEA-Research/grounding-dino-tiny",
+    "prompts": [
+      "child arm",
+      "human arm"
+    ],
+    "box_threshold": 0.25,
+    "text_threshold": 0.2,
+    "nms_iou_threshold": 0.45,
+    "merged_box_deletion": false,
+    "post_nms_policy": "KEEP_ALL_NMS_SURVIVORS",
+    "candidate_priority": "HIGH_RECALL",
+    "zero_candidate_action": "REVIEW_REQUIRED",
+    "more_than_four_candidates_action": "REVIEW_REQUIRED",
+    "arm_id_policy": "ARM IDs are assigned left-to-right in the image and are not anatomical labels.",
+    "clinical_features_used": false,
+    "prohibited_features": [
+      "diagnosis",
+      "grade",
+      "redness",
+      "swelling",
+      "lesion appearance"
+    ],
+    "rationale": "BATCH_01 scale-up visual QC showed that V1.0 merged-box deletion could remove true or useful arm candidates. V1.1 therefore preserves all candidates surviving NMS and defers further discrimination to SAM2 and downstream geometry/QC."
+  },
+  "step_08_arm_segmentation": {
+    "status": "FROZEN",
+    "method": "SAM2 box-prompt segmentation",
+    "model": "facebook/sam2.1-hiera-tiny",
+    "proposal_selection": "Highest predicted IoU",
+    "warning": "Predicted IoU is not ground-truth segmentation accuracy."
+  },
+  "step_09_medical_object_branch": {
+    "status": "DEFERRED",
+    "used_for_final_pipeline": false,
+    "reason": "Zero-shot medical-object detection produced excessive false positives.",
+    "automatic_medical_object_removal": false
+  },
+  "step_10_target_arm_selection": {
+    "status": "FROZEN",
+    "selection_basis": "Geometry only",
+    "minimum_score": 0.45,
+    "minimum_margin": 0.1,
+    "clinical_features_used": false,
+    "ambiguous_case_action": "REVIEW_REQUIRED",
+    "prohibited_selection_features": [
+      "redness",
+      "swelling",
+      "lesion appearance",
+      "diagnosis",
+      "severity grade"
+    ]
+  },
+  "step_10_7_mask_integrity": {
+    "status": "FROZEN",
+    "version": "V2",
+    "meaningful_component_threshold": 0.01,
+    "preserve_all_meaningful_components": true,
+    "max_auto_enclosed_hole_ratio": 0.05,
+    "max_total_hole_ratio_for_pass": 0.08,
+    "open_defect_review_ratio": 0.015,
+    "auto_fill_open_boundary_defect": false,
+    "inpainting": false,
+    "synthetic_pixels": false,
+    "hole_repair_policy": "Restore original image pixels only."
+  },
+  "step_11_orientation": {
+    "status": "FROZEN",
+    "version": "V2",
+    "method": "PCA major-axis normalization",
+    "target_axis": "Vertical",
+    "post_rotation_error_limit_degrees": 5.0,
+    "large_rotation_review_degrees": 60.0,
+    "left_right_flip": false,
+    "forced_180_direction": false,
+    "clinical_features_used": false
+  },
+  "step_12_standardization": {
+    "status": "FROZEN",
+    "preserve_aspect_ratio": true,
+    "stretching": false,
+    "master_size": 512,
+    "model_input_size": 224,
+    "background_rgb": [
+      128,
+      128,
+      128
+    ],
+    "generate_224_directly_from_step11": true,
+    "min_mask_occupancy_review": 0.1,
+    "max_mask_occupancy_review": 0.85,
+    "additional_rotation": false,
+    "flip": false,
+    "inpainting": false
+  },
+  "training_policy": {
+    "development_only_for_training": true,
+    "locked_test_used_for_training": false,
+    "locked_test_used_for_model_selection": false,
+    "locked_test_used_for_threshold_tuning": false,
+    "future_classifier": "MobileNetV4",
+    "model_input": "224x224 RGB"
+  },
+  "promotion_date": "2026-09-16 17:13:01",
+  "supersedes": "PEDIVEIN_PREPROC_V1.0",
+  "revision_history": [
+    {
+      "from": "PEDIVEIN_PREPROC_V1.0",
+      "to": "PEDIVEIN_PREPROC_V1.1",
+      "date": "2026-09-16 17:13:01",
+      "changed_stage": "arm_candidate_detection",
+      "change": "Disabled merged-box deletion after NMS.",
+      "unchanged_downstream_stages": true
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "specification_version": "PEDIVEIN_CAPTURE_QUALITY_SPEC_V1.0",
+  "threshold_status": "PROVISIONAL_ENGINEERING_THRESHOLD",
+  "created_at_utc": "2026-10-02T10:49:00.451134+00:00",
+  "disclaimer": "Thresholds in Capture Quality Specification V1 are engineering quality-control thresholds derived from the current Pedivein dataset and are not established clinical imaging standards.",
+  "calibration_partition": "DEVELOPMENT only",
+  "diagnosis_labels_used": false,
+  "grade_used": false,
+  "locked_test_used": false,
+  "thresholds": {
+    "short_side": {
+      "warning_below": 768,
+      "reject_below": 512,
+      "unit": "pixels",
+      "method": "warning below Development p05 region; reject below synthetic 512-vs-256 resolution validation",
+      "source": "Development engineering calibration + synthetic downscale validation",
+      "message": "Original image resolution is too low"
+    },
+    "brightness_mean": {
+      "warning_below": 125.25900653023623,
+      "reject_below": 51.714183698371706,
+      "unit": "0-255 grayscale mean",
+      "method": "Development p05 warning; midpoint of 25% and 50% synthetic brightness for reject",
+      "source": "Development engineering calibration + synthetic dark validation",
+      "message": "Image is too dark"
+    },
+    "underexposure_fraction": {
+      "warning_above": 0.04260832857716332,
+      "reject_above": 0.09424881380382419,
+      "unit": "fraction pixels <=15",
+      "method": "Development p95 warning; synthetic 25% brightness median reject",
+      "source": "Development engineering calibration + synthetic dark validation",
+      "message": "Too many severely dark pixels"
+    },
+    "overexposure_fraction": {
+      "warning_above": 0.03151206587653276,
+      "reject_above": 0.19653594467870134,
+      "unit": "fraction pixels >=240",
+      "method": "Development p95 warning; midpoint Development p99 and synthetic 150% brightness median reject",
+      "source": "Development engineering calibration + synthetic bright validation",
+      "message": "Too many near-white clipped pixels"
+    },
+    "brightness_std": {
+      "warning_below": 38.75871865679104,
+      "reject_below": 25.55808210801775,
+      "unit": "grayscale standard deviation",
+      "method": "Development p05 warning; synthetic 50% contrast median reject",
+      "source": "Development engineering calibration + synthetic contrast validation",
+      "message": "Image contrast is too low"
+    },
+    "dynamic_range_p95_p5": {
+      "warning_below": 125.8,
+      "reject_below": 85.0,
+      "unit": "grayscale p95-p5",
+      "method": "Development p05 warning; synthetic 50% contrast median reject",
+      "source": "Development engineering calibration + synthetic contrast validation",
+      "message": "Image dynamic range is too low"
+    },
+    "laplacian_variance": {
+      "warning_below": 11.433941105983799,
+      "reject_below": 2.3947713167472564,
+      "unit": "variance",
+      "method": "Development p05 warning; synthetic Gaussian sigma=2 median reject conjunction",
+      "source": "Development engineering calibration + synthetic blur validation"
+    },
+    "tenengrad": {
+      "warning_below": 407.50068352990786,
+      "reject_below": 407.0685702094604,
+      "unit": "mean squared Sobel magnitude",
+      "method": "Development p05 warning; synthetic Gaussian sigma=2 median reject conjunction",
+      "source": "Development engineering calibration + synthetic blur validation"
+    },
+    "arm_occupancy_ratio": {
+      "warning_below": 0.14140526408500448,
+      "warning_above": 0.42594705132521876,
+      "reject_below": 0.11875071452094027,
+      "reject_above": 0.5098355775317809,
+      "unit": "mask/image fraction",
+      "method": "Development p05-p95 warning; p01-p99 reject",
+      "source": "Development mask engineering calibration"
+    },
+    "arm_bbox_occupancy": {
+      "warning_below": 0.2478149186635759,
+      "warning_above": 0.7916040318480135,
+      "reject_below": 0.19514207681304868,
+      "reject_above": 0.9115191016541351,
+      "unit": "bbox/image fraction",
+      "method": "Development p05-p95 warning; p01-p99 reject",
+      "source": "Development mask engineering calibration"
+    },
+    "boundary_fraction": {
+      "warning_above": 0.004743842123193415,
+      "unit": "fraction of mask within 3px border",
+      "method": "Development p95 warning only; boundary contact alone is not reject because prevalent in current data",
+      "source": "Development mask engineering calibration"
+    }
+  },
+  "manual_requirements": {
+    "text_or_identifier": "RETAKE",
+    "large_obstruction": "RETAKE",
+    "severe_glare": "RETAKE",
+    "extreme_angle": "MANUAL_REVIEW",
+    "background_clutter": "MANUAL_REVIEW"
+  },
+  "workflow_statuses": [
+    "PASS",
+    "RETAKE",
+    "MANUAL_REVIEW"
+  ]
+}

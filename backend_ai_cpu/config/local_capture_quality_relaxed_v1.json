@@ -1,0 +1,25 @@
+{
+  "version": "PEDIVEIN_LOCAL_CAPTURE_QUALITY_RELAXED_V1",
+  "status": "PROVISIONAL_ENGINEERING_THRESHOLD",
+  "scope": "Local demo and prospective capture collection only",
+  "base": "PEDIVEIN_CAPTURE_QUALITY_SPEC_V1.0",
+  "policy": "Hard reject thresholds are unchanged. Warning thresholds are widened from Development p05/p95 to approximately p01/p99 where available.",
+  "warning_overrides": {
+    "short_side.warning_below": 512,
+    "brightness_mean.warning_below": 117.56600888657921,
+    "underexposure_fraction.warning_above": 0.050198645763023,
+    "overexposure_fraction.warning_above": 0.05887016580429538,
+    "brightness_std.warning_below": 34.68936538049321,
+    "dynamic_range_p95_p5.warning_below": 105.72,
+    "laplacian_variance.warning_below": 6.656071579303147,
+    "tenengrad.warning_below": 201.33478581969692,
+    "arm_occupancy_ratio.warning_below": 0.11875071452094027,
+    "arm_occupancy_ratio.warning_above": 0.5098355775317809,
+    "arm_bbox_occupancy.warning_below": 0.19514207681304868,
+    "arm_bbox_occupancy.warning_above": 0.9115191016541351,
+    "boundary_fraction.warning_above": 0.008681306743631071
+  },
+  "hard_reject_thresholds_changed": false,
+  "diagnosis_or_grade_used": false,
+  "locked_test_used": false
+}

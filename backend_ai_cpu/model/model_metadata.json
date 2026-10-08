@@ -1,0 +1,66 @@
+{
+  "version": "PEDIVEIN_MULTITASK_CANDIDATE_V2.0.0",
+  "status": "EXPERIMENTAL_CANDIDATE",
+  "pth_sha256": "be100f0c21a34c23d251c17b9e15083fe27d78f2b04494e7ec19d1703faa0ae2",
+  "onnx_sha256": "9974895e27012a3dfd29de80b6ffcf87083e67263aea38d4ebbac8a164c2ce20",
+  "development_n": 109,
+  "grade_counts": {
+    "1": 27,
+    "2": 40,
+    "3": 37,
+    "4": 5
+  },
+  "selected_epochs": 19,
+  "oof_condition": {
+    "accuracy": 0.7339449541284404,
+    "balanced_accuracy": 0.7512237762237762,
+    "macro_f1": 0.7331363444491347,
+    "confusion_matrix": [
+      [
+        37,
+        7
+      ],
+      [
+        22,
+        43
+      ]
+    ]
+  },
+  "oof_grade": {
+    "accuracy": 0.5596330275229358,
+    "balanced_accuracy": 0.5627377377377377,
+    "macro_f1": 0.5417063558611437,
+    "confusion_matrix": [
+      [
+        14,
+        5,
+        5,
+        3
+      ],
+      [
+        4,
+        28,
+        8,
+        0
+      ],
+      [
+        5,
+        15,
+        16,
+        1
+      ],
+      [
+        0,
+        1,
+        1,
+        3
+      ]
+    ]
+  },
+  "outputs": [
+    "condition_logits[batch,2]",
+    "grade_logits[batch,4]"
+  ],
+  "locked_test_used": false,
+  "trained_at_utc": "2026-10-07T15:57:10.294264+00:00"
+}
