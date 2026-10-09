@@ -510,9 +510,8 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
           onMouseLeave={handleMouseLeave}
           onMouseUp={handleMouseUp}
           onMouseMove={handleMouseMove}
-          className={`overflow-x-auto max-w-full custom-scrollbar select-none cursor-grab ${
-            isDragging ? 'cursor-grabbing' : ''
-          }`}
+          className={`overflow-x-auto max-w-full custom-scrollbar select-none cursor-grab ${isDragging ? 'cursor-grabbing' : ''
+            }`}
         >
           <table className="w-full text-left border-collapse whitespace-nowrap min-w-[1300px]">
             <thead>
@@ -571,11 +570,10 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
                     </div>
                     <div className="mt-2">
                       <span
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-[11.5px] font-bold border ${
-                          row.usageType === 'active'
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-[11.5px] font-bold border ${row.usageType === 'active'
                             ? 'bg-[#E0F2FE] text-[#0284C7] border-[#BAE6FD]'
                             : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'
-                        }`}
+                          }`}
                       >
                         {row.usageStatus}
                       </span>

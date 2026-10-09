@@ -18,7 +18,8 @@ import {
   Bell,
   Activity,
   Pencil,
-  Info
+  Info,
+  X
 } from 'lucide-react';
 import { SkipRoundModal } from './SkipRoundModal';
 import { AiReviewDetailModal } from './AiReviewDetailModal';
@@ -70,43 +71,51 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
   const [aiAnalysisState, setAiAnalysisState] = useState<'ready' | 'processing' | 'result'>('ready');
   const [progressPercent, setProgressPercent] = useState<number>(0);
 
+  const [previewVeinImage, setPreviewVeinImage] = useState<{ title: string; image: string } | null>(null);
+
   // Vein selection options
-  const veinOptions = [
+  const veinOptions: { id: string; title: string; sub: string; veinType: string; image?: string }[] = [
     {
       id: 'cephalic',
       title: 'Cephalic vein',
       sub: 'เส้นเลือดดำเซฟาลิก',
-      veinType: 'cephalic'
+      veinType: 'cephalic',
+      image: '/cephalic_vein.png'
     },
     {
       id: 'metacarpal',
       title: 'Metacarpal vein',
       sub: 'เส้นเลือดดำเมตาคาร์ปัล',
-      veinType: 'metacarpal'
+      veinType: 'metacarpal',
+      image: '/metacarpal_vein.png'
     },
     {
       id: 'basilic',
       title: 'Basilic median vein',
       sub: 'เส้นเลือดดำบาซิลิก มีเดียน',
-      veinType: 'basilic'
+      veinType: 'basilic',
+      image: '/basilic_vein.png'
     },
     {
       id: 'antebrachial',
       title: 'Antebrachial vein',
       sub: 'เส้นเลือดดำแอนทีบราเคียล',
-      veinType: 'antebrachial'
+      veinType: 'antebrachial',
+      image: '/antebrachial_vein.png'
     },
     {
       id: 'accessory',
       title: 'Accessory cephalic vein',
       sub: 'เส้นเลือดดำเซฟาลิกส่วนเสริม',
-      veinType: 'accessory'
+      veinType: 'accessory',
+      image: '/accessory_cephalic_vein.png'
     },
     {
       id: 'other',
       title: 'Other (ระบุ)',
       sub: 'เส้นเลือดตำแหน่งอื่น',
-      veinType: 'other'
+      veinType: 'other',
+      image: '/other_vein.png'
     }
   ];
 
@@ -565,11 +574,10 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                 if (onContinue) onContinue();
                 else if (onBack) onBack();
               }}
-              className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-bold text-[13px] shadow-xs transition-all inline-flex items-center justify-center gap-2 cursor-pointer ${
-                isInfiltrationReviewed || isPhlebitisReviewed
+              className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-bold text-[13px] shadow-xs transition-all inline-flex items-center justify-center gap-2 cursor-pointer ${isInfiltrationReviewed || isPhlebitisReviewed
                   ? 'bg-[#1E58E6] hover:bg-blue-700 text-white active:scale-95'
                   : 'bg-[#1E58E6] text-white hover:bg-blue-700 active:scale-95'
-              }`}
+                }`}
             >
               <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
               <span>บันทึกผลการตรวจ</span>
@@ -690,22 +698,20 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
           {/* Step 1 */}
           <div className="flex items-center gap-2.5">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0 transition-colors ${
-                currentStep > 1
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0 transition-colors ${currentStep > 1
                   ? 'bg-[#10B981] text-white shadow-xs'
                   : 'bg-[#1E58E6] text-white shadow-xs'
-              }`}
+                }`}
             >
               {currentStep > 1 ? <CheckCircle2 className="w-5 h-5 stroke-[2.5]" /> : '1'}
             </div>
             <span
-              className={`text-[13px] sm:text-[14px] font-bold ${
-                currentStep >= 1
+              className={`text-[13px] sm:text-[14px] font-bold ${currentStep >= 1
                   ? currentStep > 1
                     ? 'text-[#10B981]'
                     : 'text-[#1E58E6]'
                   : 'text-slate-400'
-              }`}
+                }`}
             >
               {currentStep > 1 ? '✓ ระบุตำแหน่ง IV' : 'ระบุตำแหน่ง IV'}
             </span>
@@ -713,32 +719,29 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
 
           {/* Divider 1 */}
           <div
-            className={`h-0.5 flex-1 min-w-[20px] transition-colors ${
-              currentStep > 1 ? 'bg-[#10B981]' : 'bg-slate-200'
-            }`}
+            className={`h-0.5 flex-1 min-w-[20px] transition-colors ${currentStep > 1 ? 'bg-[#10B981]' : 'bg-slate-200'
+              }`}
           />
 
           {/* Step 2 */}
           <div className="flex items-center gap-2.5">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0 transition-colors ${
-                currentStep > 2
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0 transition-colors ${currentStep > 2
                   ? 'bg-[#10B981] text-white shadow-xs'
                   : currentStep === 2
-                  ? 'bg-white text-[#1E58E6] border-2 border-[#1E58E6]'
-                  : 'border-2 border-slate-300 text-slate-400 bg-white'
-              }`}
+                    ? 'bg-white text-[#1E58E6] border-2 border-[#1E58E6]'
+                    : 'border-2 border-slate-300 text-slate-400 bg-white'
+                }`}
             >
               {currentStep > 2 ? <CheckCircle2 className="w-5 h-5 stroke-[2.5]" /> : '2'}
             </div>
             <span
-              className={`text-[13px] sm:text-[14px] ${
-                currentStep === 2
+              className={`text-[13px] sm:text-[14px] ${currentStep === 2
                   ? 'text-[#1E58E6] font-bold'
                   : currentStep > 2
-                  ? 'text-[#10B981] font-bold'
-                  : 'text-slate-400 font-medium'
-              }`}
+                    ? 'text-[#10B981] font-bold'
+                    : 'text-slate-400 font-medium'
+                }`}
             >
               {currentStep > 2 ? '✓ ถ่ายภาพ Baseline' : 'ถ่ายภาพ Baseline'}
             </span>
@@ -746,26 +749,23 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
 
           {/* Divider 2 */}
           <div
-            className={`h-0.5 flex-1 min-w-[20px] transition-colors ${
-              currentStep > 2 ? 'bg-[#10B981]' : 'bg-slate-200'
-            }`}
+            className={`h-0.5 flex-1 min-w-[20px] transition-colors ${currentStep > 2 ? 'bg-[#10B981]' : 'bg-slate-200'
+              }`}
           />
 
           {/* Step 3 */}
           <div className="flex items-center gap-2.5">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0 transition-colors ${
-                currentStep === 3
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold shrink-0 transition-colors ${currentStep === 3
                   ? 'bg-[#1E58E6] text-white shadow-xs'
                   : 'border-2 border-slate-300 text-slate-400 bg-white'
-              }`}
+                }`}
             >
               3
             </div>
             <span
-              className={`text-[13px] sm:text-[14px] ${
-                currentStep === 3 ? 'text-[#1E58E6] font-bold' : 'text-slate-400 font-medium'
-              }`}
+              className={`text-[13px] sm:text-[14px] ${currentStep === 3 ? 'text-[#1E58E6] font-bold' : 'text-slate-400 font-medium'
+                }`}
             >
               ยืนยันเริ่มติดตาม 7 วัน
             </span>
@@ -850,40 +850,54 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                   <div
                     key={vein.id}
                     onClick={() => setSelectedVeinId(vein.id)}
-                    className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                      isSelected
+                    className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${isSelected
                         ? 'border-[#1E58E6] bg-blue-50/40 shadow-2xs ring-1 ring-[#1E58E6]'
                         : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center gap-3">
-                      {/* SVG Thumbnail Illustration */}
-                      <div className="w-12 h-12 rounded-lg bg-blue-50/80 border border-blue-100/90 flex items-center justify-center shrink-0 p-1">
-                        <svg viewBox="0 0 50 50" fill="none" className="w-full h-full">
-                          {/* Arm contour */}
-                          <path d="M 12 8 Q 18 25 22 42 M 38 8 Q 32 25 28 42" stroke="#94A3B8" strokeWidth="1.8" strokeLinecap="round"/>
-                          {/* Hand outline */}
-                          <path d="M 22 42 Q 25 47 28 42" stroke="#94A3B8" strokeWidth="1.8"/>
-                          {/* Vein lines according to veinType */}
-                          {vein.veinType === 'cephalic' && (
-                            <path d="M 18 10 Q 20 25 22 40" stroke="#1E58E6" strokeWidth="3.2" strokeLinecap="round"/>
-                          )}
-                          {vein.veinType === 'metacarpal' && (
-                            <path d="M 18 30 L 22 42 M 25 30 L 25 42 M 32 30 L 28 42" stroke="#1E58E6" strokeWidth="2.8" strokeLinecap="round"/>
-                          )}
-                          {vein.veinType === 'basilic' && (
-                            <path d="M 32 10 Q 30 25 28 40" stroke="#1E58E6" strokeWidth="3.2" strokeLinecap="round"/>
-                          )}
-                          {vein.veinType === 'antebrachial' && (
-                            <path d="M 25 12 Q 25 26 25 40" stroke="#1E58E6" strokeWidth="3.2" strokeLinecap="round"/>
-                          )}
-                          {vein.veinType === 'accessory' && (
-                            <path d="M 16 14 Q 19 25 21 34" stroke="#1E58E6" strokeWidth="2.8" strokeDasharray="3 2" strokeLinecap="round"/>
-                          )}
-                          {vein.veinType === 'other' && (
-                            <circle cx="25" cy="25" r="8" stroke="#1E58E6" strokeWidth="2.2" strokeDasharray="2.5 2.5"/>
-                          )}
-                        </svg>
+                      {/* Thumbnail Illustration / Image */}
+                      <div className="w-12 h-12 rounded-lg bg-blue-50/80 border border-blue-100/90 flex items-center justify-center shrink-0 overflow-hidden relative group">
+                        {vein.image ? (
+                          <img
+                            src={vein.image}
+                            alt={vein.title}
+                            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-200"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewVeinImage({ title: vein.title, image: vein.image! });
+                            }}
+                            title="คลิกเพื่อขยายรูปภาพ"
+                          />
+                        ) : (
+                          <div className="p-1 w-full h-full flex items-center justify-center">
+                            <svg viewBox="0 0 50 50" fill="none" className="w-full h-full">
+                              {/* Arm contour */}
+                              <path d="M 12 8 Q 18 25 22 42 M 38 8 Q 32 25 28 42" stroke="#94A3B8" strokeWidth="1.8" strokeLinecap="round" />
+                              {/* Hand outline */}
+                              <path d="M 22 42 Q 25 47 28 42" stroke="#94A3B8" strokeWidth="1.8" />
+                              {/* Vein lines according to veinType */}
+                              {vein.veinType === 'cephalic' && (
+                                <path d="M 18 10 Q 20 25 22 40" stroke="#1E58E6" strokeWidth="3.2" strokeLinecap="round" />
+                              )}
+                              {vein.veinType === 'metacarpal' && (
+                                <path d="M 18 30 L 22 42 M 25 30 L 25 42 M 32 30 L 28 42" stroke="#1E58E6" strokeWidth="2.8" strokeLinecap="round" />
+                              )}
+                              {vein.veinType === 'basilic' && (
+                                <path d="M 32 10 Q 30 25 28 40" stroke="#1E58E6" strokeWidth="3.2" strokeLinecap="round" />
+                              )}
+                              {vein.veinType === 'antebrachial' && (
+                                <path d="M 25 12 Q 25 26 25 40" stroke="#1E58E6" strokeWidth="3.2" strokeLinecap="round" />
+                              )}
+                              {vein.veinType === 'accessory' && (
+                                <path d="M 16 14 Q 19 25 21 34" stroke="#1E58E6" strokeWidth="2.8" strokeDasharray="3 2" strokeLinecap="round" />
+                              )}
+                              {vein.veinType === 'other' && (
+                                <circle cx="25" cy="25" r="8" stroke="#1E58E6" strokeWidth="2.2" strokeDasharray="2.5 2.5" />
+                              )}
+                            </svg>
+                          </div>
+                        )}
                       </div>
 
                       <div>
@@ -969,11 +983,10 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left 7 Cols: Camera Viewfinder / Captured Image Container */}
             <div
-              className={`lg:col-span-7 rounded-2xl h-[360px] sm:h-[400px] relative flex flex-col items-center justify-center p-6 overflow-hidden border transition-all ${
-                isCaptured
+              className={`lg:col-span-7 rounded-2xl h-[360px] sm:h-[400px] relative flex flex-col items-center justify-center p-6 overflow-hidden border transition-all ${isCaptured
                   ? 'border-2 border-emerald-500 shadow-md bg-[#0B1528]'
                   : 'bg-[#0B1528] border-slate-800 shadow-inner'
-              }`}
+                }`}
             >
               {isCaptured ? (
                 <>
@@ -1238,11 +1251,10 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
               }
             }}
             disabled={currentStep === 2 && !isCaptured}
-            className={`px-6 py-2.5 rounded-xl font-bold text-[14px] inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer ${
-              currentStep === 2 && !isCaptured
+            className={`px-6 py-2.5 rounded-xl font-bold text-[14px] inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer ${currentStep === 2 && !isCaptured
                 ? 'bg-[#93C5FD] text-white cursor-not-allowed opacity-80'
                 : 'bg-[#1E58E6] hover:bg-blue-700 text-white active:scale-95'
-            }`}
+              }`}
           >
             <span>ถัดไป</span>
             <ChevronRight className="w-4 h-4" />
@@ -1322,6 +1334,46 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
             setReviewModalItem(null);
           }}
         />
+      )}
+
+      {/* Vein Image Preview Modal */}
+      {previewVeinImage && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setPreviewVeinImage(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl relative border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-slate-900 text-base">
+                ภาพกายวิภาค - {previewVeinImage.title}
+              </h3>
+              <button
+                onClick={() => setPreviewVeinImage(null)}
+                className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="rounded-xl overflow-hidden bg-slate-50 border border-slate-200/80 p-2 flex items-center justify-center max-h-[70vh]">
+              <img
+                src={previewVeinImage.image}
+                alt={previewVeinImage.title}
+                className="max-h-[65vh] w-auto object-contain rounded-lg shadow-2xs"
+              />
+            </div>
+            <div className="text-center pt-1">
+              <button
+                onClick={() => setPreviewVeinImage(null)}
+                className="px-5 py-2 bg-[#1E58E6] text-white font-semibold text-xs rounded-xl hover:bg-blue-700 transition-colors shadow-2xs"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

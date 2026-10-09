@@ -88,8 +88,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <button
               onClick={() => setTimeRange('today')}
               className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all cursor-pointer ${timeRange === 'today'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
                 }`}
             >
               วันนี้
@@ -97,8 +97,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <button
               onClick={() => setTimeRange('7d')}
               className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all cursor-pointer ${timeRange === '7d'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
                 }`}
             >
               7 วันล่าสุด
@@ -106,8 +106,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <button
               onClick={() => setTimeRange('30d')}
               className={`px-3.5 py-1.5 rounded-lg text-[12px] font-bold transition-all cursor-pointer ${timeRange === '30d'
-                  ? 'bg-[#1E58E6] text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#1E58E6] text-white shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
                 }`}
             >
               30 วันล่าสุด
@@ -115,8 +115,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <button
               onClick={() => setTimeRange('3m')}
               className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all cursor-pointer ${timeRange === '3m'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
                 }`}
             >
               3 เดือนล่าสุด
@@ -137,7 +137,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
       {/* EXECUTIVE BLUE BANNER CARD WITH ILLUSTRATION                             */}
       {/* ========================================================================= */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#011C40] via-[#023373] to-[#0A4B94] p-6 text-white shadow-md">
-        
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <div className="text-[12px] text-blue-200 font-medium">
@@ -511,8 +511,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <button
               onClick={() => setGradeFilter('all')}
               className={`px-3.5 py-1.5 rounded-lg flex items-center gap-2 text-[13px] font-semibold cursor-pointer shrink-0 transition-all ${gradeFilter === 'all'
-                  ? 'bg-[#1E58E6] text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#1E58E6] text-white shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
                 }`}
             >
               <span>รวม</span>
@@ -525,8 +525,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <button
               onClick={() => setGradeFilter('infill')}
               className={`px-3.5 py-1.5 rounded-lg flex items-center gap-2 text-[13px] font-semibold cursor-pointer shrink-0 transition-all ${gradeFilter === 'infill'
-                  ? 'bg-[#1E58E6] text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#1E58E6] text-white shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
                 }`}
             >
               <span>Infiltration</span>
@@ -539,8 +539,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <button
               onClick={() => setGradeFilter('phleb')}
               className={`px-3.5 py-1.5 rounded-lg flex items-center gap-2 text-[13px] font-semibold cursor-pointer shrink-0 transition-all ${gradeFilter === 'phleb'
-                  ? 'bg-[#1E58E6] text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#1E58E6] text-white shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
                 }`}
             >
               <span>Phlebitis</span>
@@ -998,18 +998,16 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
               {/* Option 1: PDF */}
               <div
                 onClick={() => setExportFormat('pdf')}
-                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${
-                  exportFormat === 'pdf'
+                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${exportFormat === 'pdf'
                     ? 'border-[#1E58E6] bg-[#F0F7FF] shadow-2xs'
                     : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
+                  }`}
               >
                 <div
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
-                    exportFormat === 'pdf'
+                  className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${exportFormat === 'pdf'
                       ? 'border-[#1E58E6] bg-[#1E58E6]'
                       : 'border-slate-300 bg-white'
-                  }`}
+                    }`}
                 >
                   {exportFormat === 'pdf' && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
@@ -1029,18 +1027,16 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
               {/* Option 2: Excel / CSV */}
               <div
                 onClick={() => setExportFormat('csv')}
-                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${
-                  exportFormat === 'csv'
+                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${exportFormat === 'csv'
                     ? 'border-[#1E58E6] bg-[#F0F7FF] shadow-2xs'
                     : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
+                  }`}
               >
                 <div
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
-                    exportFormat === 'csv'
+                  className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${exportFormat === 'csv'
                       ? 'border-[#1E58E6] bg-[#1E58E6]'
                       : 'border-slate-300 bg-white'
-                  }`}
+                    }`}
                 >
                   {exportFormat === 'csv' && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
@@ -1140,8 +1136,8 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
                   {isExporting
                     ? 'กำลังประมวลผล...'
                     : exportFormat === 'pdf'
-                    ? 'เปิดเอกสาร PDF'
-                    : 'ดาวน์โหลดไฟล์ .csv'}
+                      ? 'เปิดเอกสาร PDF'
+                      : 'ดาวน์โหลดไฟล์ .csv'}
                 </span>
               </button>
             </div>
