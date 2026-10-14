@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import tempfile
 from pathlib import Path
@@ -31,6 +32,18 @@ def softmax(values: np.ndarray) -> np.ndarray:
     shifted = values - np.max(values)
     values = np.exp(shifted)
     return values / values.sum()
+
+
+def embed_review_candidates(preprocessing: dict) -> None:
+    """Embed temporary review previews before their directory is removed."""
+    for candidate in preprocessing.get("manual_review_candidates", []):
+        preview_path = candidate.pop("preview_path", None)
+        if not preview_path:
+            continue
+        data = Path(preview_path).read_bytes()
+        candidate["preview_data_url"] = (
+            "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
+        )
 
 
 class PediveinPredictor:
@@ -86,6 +99,7 @@ class PediveinPredictor:
         with tempfile.TemporaryDirectory(prefix="pedivein_") as directory:
             output = Path(directory) / "model_224.png"
             preprocessing = self.preprocessor.process(image_path, output, selected_arm_id)
+            embed_review_candidates(preprocessing)
             base["preprocessing"] = preprocessing
             if preprocessing["status"] != "READY":
                 return base | {"status": "PREPROCESSING_HOLD"}

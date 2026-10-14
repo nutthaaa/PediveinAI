@@ -43,6 +43,52 @@ python scripts/predict_image.py /path/to/image.jpg --allow-manual-quality-review
 python scripts/predict_image.py /path/to/image.jpg --selected-arm-id ARM01
 ```
 
+## เปิด FastAPI
+
+กำหนด API key ก่อนใช้งานนอกเครื่อง local:
+
+```bash
+export PEDIVEIN_API_KEY='replace-with-a-long-random-secret'
+export PEDIVEIN_API_HOST='127.0.0.1'
+export PEDIVEIN_API_PORT='8000'
+export PEDIVEIN_MAX_UPLOAD_MB='15'
+python scripts/run_api.py
+```
+
+API จะโหลด Grounding DINO, SAM2 และ ONNX หนึ่งครั้งตอนเริ่ม service จึงอาจใช้เวลาสักครู่ ตรวจสถานะได้ที่:
+
+```bash
+curl http://127.0.0.1:8000/health/live
+curl http://127.0.0.1:8000/health/ready
+```
+
+ส่งภาพหนึ่งรูป:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/pedivein/predict \
+  -H "X-API-Key: $PEDIVEIN_API_KEY" \
+  -F "image=@/path/to/image.jpg"
+```
+
+กรณีเจ้าหน้าที่เลือกแขนและอนุญาตภาพที่อยู่ใน `MANUAL_REVIEW`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/pedivein/predict \
+  -H "X-API-Key: $PEDIVEIN_API_KEY" \
+  -F "image=@/path/to/image.jpg" \
+  -F "selected_arm_id=ARM01" \
+  -F "allow_manual_quality_review=true"
+```
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- OpenAPI JSON: `http://127.0.0.1:8000/openapi.json`
+- รองรับ JPG/PNG และจำกัดขนาดเริ่มต้น 15 MB
+- ใช้ worker เดียวเป็นค่าเริ่มต้นเพื่อไม่โหลดโมเดลซ้ำจน RAM เต็ม
+- ไฟล์ upload ถูกเขียนเป็นไฟล์ชั่วคราวและลบใน `finally` หลัง request
+- access log ถูกปิดเพื่อหลีกเลี่ยงการบันทึกข้อมูล path/query โดยไม่จำเป็น
+
+FastAPI นี้เป็น inference API เท่านั้น ไม่มีระบบเก็บภาพ, nurse confirmation, database หรือ retraining อัตโนมัติ ส่วนเหล่านั้นต้องอยู่ใน backend/secure storage ของบริษัท
+
 ## ใช้ใน backend Python
 
 สร้าง `PediveinPredictor` เพียงครั้งเดียวตอน service เริ่ม เพราะโมเดล preprocessing ใช้เวลาโหลด แล้ว reuse ในทุก request:
@@ -60,6 +106,6 @@ result = predictor.predict("/secure/upload/image.jpg")
 - `QUALITY_HOLD`: รูปต้องถ่ายใหม่หรือรอเจ้าหน้าที่ตรวจ
 - `PREPROCESSING_HOLD`: หา/เลือกแขนไม่ได้ หรือ preprocessing ไม่ผ่าน
 
-Backend ควรลบไฟล์ upload หลังประมวลผลตามนโยบายโรงพยาบาล, ไม่เขียนภาพผู้ป่วยลง log และบังคับ HTTPS/authentication ใน API ชั้นนอก แพ็กเกจนี้ให้ inference runtime ไม่ได้เปิด HTTP endpoint เพื่อให้ทีม backend ผูกเข้ากับระบบและมาตรฐานความปลอดภัยของบริษัทเอง
+FastAPI จะลบไฟล์ upload ชั่วคราวหลังประมวลผล แต่ Backend ยังคงต้องบังคับ HTTPS, network restriction, authentication/authorization, audit policy และการจัดเก็บข้อมูลตามมาตรฐานของบริษัทและโรงพยาบาล ห้ามวาง Uvicorn ที่เปิดตรงสู่อินเทอร์เน็ตโดยไม่มี reverse proxy และ TLS
 
 รายละเอียด input/output อยู่ที่ [API_CONTRACT.md](API_CONTRACT.md)
