@@ -166,7 +166,48 @@ export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) 
 
       {/* Main Data Table Card */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile card list */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredItems.map((item) => (
+            <div key={item.id} className="p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-900 truncate">{item.patientName}</div>
+                  <div className="text-[12px] text-slate-400 truncate">{item.hnAn}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-bold text-blue-600 text-lg leading-none">{item.confidence}</div>
+                  <div className="text-[10.5px] text-blue-500 mt-1">ความเชื่อมั่น AI</div>
+                </div>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-[12px] font-bold inline-flex items-center gap-1.5 border ${item.type === 'infiltration' ? 'bg-[#EFF6FF] text-[#2563EB] border-[#BFDBFE]' : 'bg-[#FEF2F2] text-[#DC2626] border-[#FCA5A5]'}`}>
+                {item.type === 'infiltration' ? <Sparkles className="w-3.5 h-3.5" /> : <PhlebitisIcon className="w-3.5 h-3.5" />}
+                {item.badgeText}
+              </span>
+              <div className="grid grid-cols-2 gap-3 text-[12.5px] bg-slate-50 rounded-xl p-3">
+                <div className="min-w-0">
+                  <div className="text-slate-400 text-[11px]">IV SITE</div>
+                  <div className="font-semibold text-slate-800 truncate">{item.site}</div>
+                  <div className="text-slate-500 truncate">{item.vein} · {item.needleNum}</div>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-slate-400 text-[11px]">สถานะ</div>
+                  <div className={`font-semibold truncate ${item.isAbnormalTextRed ? 'text-[#DC2626]' : 'text-slate-800'}`}>{item.abnormalStatus}</div>
+                  <div className="text-slate-500 truncate">{item.time}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedReviewItem(item)}
+                className="w-full bg-[#1E58E6] hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-[13px] inline-flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <Eye className="w-4 h-4" />
+                <span>{item.buttonText}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto hidden md:block">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-[14px] font-bold text-slate-700">
@@ -251,7 +292,7 @@ export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) 
         </div>
 
         {/* Table Pagination Footer */}
-        <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+        <div className="p-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <div>Showing 10 of 10 Historical Log</div>
           <div className="flex items-center gap-1.5">
             <button className="px-3.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-slate-600 cursor-pointer shadow-2xs">
@@ -269,7 +310,7 @@ export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) 
 
       {/* Bottom Disclaimer Banner */}
       <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex items-center gap-4 text-blue-950 mt-6">
-        <svg width="64" height="64" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+        <svg width="64" height="64" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 w-10 h-10 sm:w-16 sm:h-16">
           <path
             d="M22.75 11.375L32.2292 15.1074V22.0391C32.2292 28.4375 28.2006 33.1297 22.75 35.6891C17.2995 33.1297 13.2709 28.4375 13.2709 22.0391V15.1074L22.75 11.375Z"
             stroke="#0369A1"

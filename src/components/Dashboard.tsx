@@ -1,3 +1,4 @@
+import { UserProfileMenu } from './UserProfileMenu';
 import React, { useState } from 'react';
 import dashboardHeaderLogo from '../assets/dashboard-header-logo.png';
 import { RoundsInspection } from './RoundsInspection';
@@ -21,15 +22,12 @@ import {
   Search,
   Calendar,
   Info,
-  ChevronRight,
   Clock,
   Sparkles,
   Users,
   Activity,
   FileText,
   UserCheck,
-  LogOut,
-  Home,
   ClipboardList,
   Bookmark,
   Waves,
@@ -159,15 +157,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       <aside className="hidden lg:flex w-64 sm:w-72 bg-[#012351] text-white flex-col justify-between shrink-0 h-screen border-r border-[#0a3166] shadow-lg overflow-y-auto no-scrollbar">
         <div className="p-4 sm:p-5">
           {/* Logo & Title Header */}
-          <div className="pb-5 border-b border-[#0e3770]/80 flex flex-col items-center gap-2 text-center">
-            <div className="w-full bg-transparent p-2 rounded-xl flex items-center justify-center">
+          <div className="pb-5 border-b border-[#0e3770]/80 flex flex-col items-center gap-2.5 text-center">
+            <div className="w-full bg-transparent py-1 flex items-center justify-center">
               <img
                 src={dashboardHeaderLogo}
                 alt="BANGKOK HOSPITAL"
-                className="h-9 w-auto object-contain max-w-full"
+                className="h-[50px] sm:h-[52px] w-auto object-contain max-w-full drop-shadow-sm"
               />
             </div>
-            <span className="text-[12px] text-blue-200 font-medium tracking-wide">
+            <span className="text-[15px] text-white font-medium tracking-wide">
               ติดตาม IV Site ผู้ป่วยเด็ก
             </span>
           </div>
@@ -399,34 +397,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           </div>
 
           {/* User Profile Info */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-slate-700 ring-2 ring-blue-500/40 flex items-center justify-center text-white font-bold text-xs overflow-hidden">
-                <img
-                  src="/image 9.png"
-                  alt="Nurse Profile"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex flex-col text-[12px]">
-                <span className="font-bold text-white leading-tight truncate max-w-[120px]">
-                  ชื่อเจ้าหน้าที่-นามสกุล
-                </span>
-                <span className="text-slate-400 text-[11px]">NICU Nurse</span>
-              </div>
-            </div>
-            {onLogout ? (
-              <button
-                onClick={onLogout}
-                title="ออกจากระบบ"
-                className="text-slate-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            ) : (
-              <ChevronRight className="w-4 h-4 text-slate-500" />
-            )}
-          </div>
+          <UserProfileMenu onLogout={onLogout} />
           <div className="text-center text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
             Bangkok Hospital PediVeinCare AI v1.0
           </div>
@@ -448,15 +419,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             <div className="p-4 sm:p-5">
               {/* Logo, Title Header & Close Button */}
               <div className="pb-5 border-b border-[#0e3770]/80 flex items-center justify-between gap-2">
-                <div className="flex flex-col items-start gap-1">
+                <div className="flex flex-col items-start gap-1.5">
                   <div className="bg-transparent rounded-xl flex items-center justify-start">
                     <img
                       src={dashboardHeaderLogo}
                       alt="BANGKOK HOSPITAL"
-                      className="h-8 sm:h-9 w-auto object-contain max-w-full"
+                      className="h-10 sm:h-11 w-auto object-contain max-w-[200px]"
                     />
                   </div>
-                  <span className="text-[11.5px] text-blue-200 font-medium tracking-wide">
+                  <span className="text-[13px] text-white font-medium tracking-wide">
                     ติดตาม IV Site ผู้ป่วยเด็ก
                   </span>
                 </div>
@@ -681,34 +652,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
             {/* Bottom User Profile */}
             <div className="p-4 space-y-3 bg-[#001738] border-t border-[#0a3166]">
-              <div className="flex items-center justify-between pt-1">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-full bg-slate-700 ring-2 ring-blue-500/40 flex items-center justify-center text-white font-bold text-xs overflow-hidden">
-                    <img
-                      src="/image 9.png"
-                      alt="Nurse Profile"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex flex-col text-[12px]">
-                    <span className="font-bold text-white leading-tight truncate max-w-[130px]">
-                      ชื่อเจ้าหน้าที่-นามสกุล
-                    </span>
-                    <span className="text-slate-400 text-[11px]">NICU Nurse</span>
-                  </div>
-                </div>
-                {onLogout ? (
-                  <button
-                    onClick={onLogout}
-                    title="ออกจากระบบ"
-                    className="text-slate-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-slate-500" />
-                )}
-              </div>
+              <UserProfileMenu onLogout={onLogout} />
               <div className="text-center text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
                 Bangkok Hospital PediVeinCare AI v1.0
               </div>
@@ -720,11 +664,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       {/* ========================================================================= */}
       {/* MAIN CONTENT AREA                                                         */}
       {/* ========================================================================= */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto no-scrollbar">
+      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto overflow-x-hidden no-scrollbar">
         {/* TOP BAR / HEADER */}
-        <header className="h-16 bg-white border-b border-slate-200 px-3.5 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-30 shadow-xs">
+        <header className="h-16 bg-white border-b border-slate-200 px-3.5 sm:px-6 flex items-center justify-between gap-2 shrink-0 sticky top-0 z-30 shadow-xs">
           {/* Left: Mobile Hamburger Toggle Button & Breadcrumb Location */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
               className="p-2 -ml-1 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl lg:hidden transition-colors cursor-pointer"
@@ -732,17 +676,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             >
               <Menu className="w-5 h-5 stroke-[2.2]" />
             </button>
-            <div className="flex items-center gap-1 sm:gap-2 text-[12.5px] sm:text-[14px]">
-              <span className="font-bold text-slate-900 truncate max-w-[110px] sm:max-w-none">โรงพยาบาลกรุงเทพ</span>
-              <span className="text-slate-400">/</span>
-              <span className="text-slate-600 font-medium truncate max-w-[130px] sm:max-w-none">แผนกเด็ก (กุมารเวชกรรม)</span>
+            <div className="flex items-center gap-1 sm:gap-2 text-[12.5px] sm:text-[14px] min-w-0">
+              <span className="font-bold text-slate-900 truncate">โรงพยาบาลกรุงเทพ</span>
+              <span className="text-slate-400 hidden sm:inline">/</span>
+              <span className="text-slate-600 font-medium truncate hidden sm:inline">แผนกเด็ก (กุมารเวชกรรม)</span>
             </div>
           </div>
 
           {/* Header Action Tools */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Search Input */}
-            <div className="relative">
+            <div className="relative hidden md:block">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -786,7 +730,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         </header>
 
         {/* MAIN BODY SCROLL AREA */}
-        <div className="p-3.5 sm:p-6 pb-14 space-y-6 max-w-[1600px] w-full mx-auto">
+        <div className="p-3.5 sm:p-6 pb-24 lg:pb-14 space-y-6 max-w-[1600px] w-full min-w-0 mx-auto">
           {activeNav === 'guide' ? (
             <div className="space-y-6">
               {/* Back link & Title section */}
@@ -1043,6 +987,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             <NotificationCenter
               onMarkAllAsRead={() => setNotificationCount(0)}
               onBack={() => setActiveNav('overview')}
+              onNavigate={(nav: string) => setActiveNav(nav)}
             />
           ) : activeNav === 'infiltration' ? (
             <InfiltrationTracking

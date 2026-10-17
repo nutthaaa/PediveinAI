@@ -27,6 +27,61 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
   const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d' | '3m'>('30d');
   const [gradeFilter, setGradeFilter] = useState<'all' | 'infill' | 'phleb'>('all');
 
+  const currentGradeData = React.useMemo(() => {
+    const rawData = [
+      { grade: 'Grade 1', infill: 1, phleb: 0 },
+      { grade: 'Grade 2', infill: 0, phleb: 0 },
+      { grade: 'Grade 3', infill: 0, phleb: 1 },
+      { grade: 'Grade 4', infill: 0, phleb: 0 },
+    ];
+
+    let total = 0;
+    if (gradeFilter === 'all') {
+      total = rawData.reduce((acc, g) => acc + g.infill + g.phleb, 0);
+    } else if (gradeFilter === 'infill') {
+      total = rawData.reduce((acc, g) => acc + g.infill, 0);
+    } else {
+      total = rawData.reduce((acc, g) => acc + g.phleb, 0);
+    }
+
+    const subtitle =
+      gradeFilter === 'all'
+        ? 'รายการที่ได้รับการยืนยันแล้ว · ทุกหมวด'
+        : gradeFilter === 'infill'
+        ? 'รายการที่ได้รับการยืนยันแล้ว · เฉพาะ Infiltration'
+        : 'รายการที่ได้รับการยืนยันแล้ว · เฉพาะ Phlebitis';
+
+    const grades = rawData.map((g) => {
+      let count = 0;
+      let infillWidth = 0;
+      let phlebWidth = 0;
+
+      if (gradeFilter === 'all') {
+        count = g.infill + g.phleb;
+        infillWidth = total > 0 ? (g.infill / total) * 100 : 0;
+        phlebWidth = total > 0 ? (g.phleb / total) * 100 : 0;
+      } else if (gradeFilter === 'infill') {
+        count = g.infill;
+        infillWidth = total > 0 ? (g.infill / total) * 100 : 0;
+      } else {
+        count = g.phleb;
+        phlebWidth = total > 0 ? (g.phleb / total) * 100 : 0;
+      }
+
+      const percent = total > 0 && count > 0 ? `${((count / total) * 100).toFixed(1)}%` : '0%';
+
+      return {
+        grade: g.grade,
+        count,
+        percent,
+        infillWidth,
+        phlebWidth,
+      };
+    });
+
+    return { total, subtitle, grades };
+  }, [gradeFilter]);
+
   // Export Modal States
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'csv'>('pdf');
@@ -555,20 +610,22 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
         {/* Total Count & Legend Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pt-1">
           <div>
-            <div className="text-4xl font-extrabold text-slate-900 leading-none">2</div>
+            <div className="text-4xl font-extrabold text-slate-900 leading-none transition-all">
+              {currentGradeData.total}
+            </div>
             <div className="text-[12px] text-slate-500 font-medium mt-1">
-              รายการที่ได้รับการยืนยันแล้ว · ทุกหมวด
+              {currentGradeData.subtitle}
             </div>
           </div>
 
           {/* Infiltration / Phlebitis Legend */}
           <div className="flex items-center gap-5 text-[13px] self-start sm:self-auto">
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-xs bg-[#0EA5E9] inline-block"></span>
+            <div className={`flex items-center gap-2 transition-opacity duration-300 ${gradeFilter === 'phleb' ? 'opacity-35' : 'opacity-100'}`}>
+              <span className="w-3.5 h-3.5 rounded-xs bg-[#0EA5E9] inline-block shadow-2xs"></span>
               <span className="font-semibold text-slate-700">Infiltration</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-3.5 rounded-xs bg-[#EF4444] inline-block"></span>
+            <div className={`flex items-center gap-2 transition-opacity duration-300 ${gradeFilter === 'infill' ? 'opacity-35' : 'opacity-100'}`}>
+              <span className="w-3.5 h-3.5 rounded-xs bg-[#EF4444] inline-block shadow-2xs"></span>
               <span className="font-semibold text-slate-700">Phlebitis</span>
             </div>
           </div>
@@ -576,47 +633,27 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
 
         {/* Grade Bars Stack */}
         <div className="space-y-3.5 pt-1">
-          {/* Grade 1 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 1</span>
-            <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100">
-              <div className="bg-[#0EA5E9] h-full w-[50%] rounded-full transition-all duration-500"></div>
+          {currentGradeData.grades.map((item) => (
+            <div key={item.grade} className="flex items-center gap-3 text-[13px]">
+              <span className="w-16 font-medium text-slate-700 shrink-0">{item.grade}</span>
+              <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
+                {item.infillWidth > 0 && (
+                  <div
+                    style={{ width: `${item.infillWidth}%` }}
+                    className="bg-[#0EA5E9] h-full rounded-full transition-all duration-500 ease-out"
+                  ></div>
+                )}
+                {item.phlebWidth > 0 && (
+                  <div
+                    style={{ width: `${item.phlebWidth}%` }}
+                    className="bg-[#EF4444] h-full rounded-full transition-all duration-500 ease-out"
+                  ></div>
+                )}
+              </div>
+              <span className="w-6 font-bold text-slate-900 text-right shrink-0">{item.count}</span>
+              <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">{item.percent}</span>
             </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">1</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">50.0%</span>
-          </div>
-
-          {/* Grade 2 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 2</span>
-            <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100">
-              <div className="w-1 h-full bg-[#0EA5E9] rounded-l-full shrink-0"></div>
-              <div className="w-1 h-full bg-[#EF4444] rounded-r-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0%</span>
-          </div>
-
-          {/* Grade 3 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 3</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-100">
-              <div className="bg-[#EF4444] h-full w-[50%] rounded-full transition-all duration-500"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">1</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">50.0%</span>
-          </div>
-
-          {/* Grade 4 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 4</span>
-            <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100">
-              <div className="w-1 h-full bg-[#0EA5E9] rounded-l-full shrink-0"></div>
-              <div className="w-1 h-full bg-[#EF4444] rounded-r-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0%</span>
-          </div>
+          ))}
         </div>
 
         {/* Bottom Footer Note & Action */}
@@ -625,10 +662,26 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             AI ไม่กำหนดระดับความรุนแรง (Grade) · แสดงเฉพาะผลที่บุคลากรทางการแพทย์ยืนยันแล้ว
           </div>
           <button
-            onClick={() => onNavigate && onNavigate('history')}
+            onClick={() => {
+              if (onNavigate) {
+                if (gradeFilter === 'infill') {
+                  onNavigate('infiltration');
+                } else if (gradeFilter === 'phleb') {
+                  onNavigate('phlebitis');
+                } else {
+                  onNavigate('history');
+                }
+              }
+            }}
             className="text-[#1E58E6] font-semibold hover:underline flex items-center gap-1 self-start sm:self-auto cursor-pointer"
           >
-            <span>ดูรายละเอียดแต่ละประเภท</span>
+            <span>
+              {gradeFilter === 'infill'
+                ? 'ดูรายละเอียด Infiltration'
+                : gradeFilter === 'phleb'
+                ? 'ดูรายละเอียด Phlebitis'
+                : 'ดูรายละเอียดแต่ละประเภท'}
+            </span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
