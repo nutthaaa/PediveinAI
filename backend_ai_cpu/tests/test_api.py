@@ -63,3 +63,19 @@ def test_optional_api_key(monkeypatch):
             files={"image": ("test.jpg", b"fake", "image/jpeg")},
         )
         assert allowed.status_code == 200
+
+
+def test_quality_endpoint_needs_no_model():
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 48), (200, 150, 120)).save(buffer, format="PNG")
+    with TestClient(create_app(load_model=False)) as api:
+        response = api.post(
+            "/api/v1/pedivein/quality",
+            files={"image": ("tiny.png", buffer.getvalue(), "image/png")},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "RETAKE"

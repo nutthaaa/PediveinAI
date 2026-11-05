@@ -1,63 +1,48 @@
 import React, { useState } from 'react';
+import { api, ApiError } from '../api/client';
+import { useApi } from '../api/useApi';
+import type { UserBrief } from '../api/types';
 import { X, Search, User, Check, Bell, CheckCircle2 } from 'lucide-react';
 
-interface ReviewerOption {
-  id: string;
-  name: string;
-  role: string;
-}
-
-const mockReviewers: ReviewerOption[] = [
-  {
-    id: 'rev-1',
-    name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-    role: 'พยาบาลวิชาชีพ แผนกเด็ก'
-  },
-  {
-    id: 'rev-2',
-    name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-    role: 'หัวหน้าพยาบาลวิชาชีพ แผนกเด็ก'
-  },
-  {
-    id: 'rev-3',
-    name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-    role: 'เจ้าหน้าที่ IV'
-  },
-  {
-    id: 'rev-4',
-    name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-    role: 'เจ้าหน้าที่ IV'
-  }
-];
-
 interface AssignReviewerModalProps {
+  analysisId?: number;
   onClose: () => void;
   onConfirmSuccess?: (reviewerName: string) => void;
 }
 
 export const AssignReviewerModal: React.FC<AssignReviewerModalProps> = ({
+  analysisId,
   onClose,
   onConfirmSuccess
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedId, setSelectedId] = useState<string>('rev-1');
+  const [selectedId, setSelectedId] = useState<string>('');
   const [showToast, setShowToast] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const reviewers = useApi(() => api.get<UserBrief[]>('/api/users/reviewers'), []);
+  const options = (reviewers.data ?? []).map((u) => ({ id: String(u.id), name: u.full_name, role: u.position }));
 
-  const filteredReviewers = mockReviewers.filter(
+  const filteredReviewers = options.filter(
     (rev) =>
       rev.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rev.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rev.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleConfirmSubmit = () => {
-    const selected = mockReviewers.find((r) => r.id === selectedId);
+  const handleConfirmSubmit = async () => {
+    const selected = options.find((r) => r.id === selectedId);
+    if (!selected) return;
+    setError(null);
+    try {
+      if (analysisId) await api.post(`/api/analyses/${analysisId}/assign`, { reviewer_id: Number(selected.id) });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'มอบหมายไม่สำเร็จ');
+      return;
+    }
     setShowToast(true);
 
     setTimeout(() => {
-      if (onConfirmSuccess && selected) {
-        onConfirmSuccess(selected.name);
-      }
+      if (onConfirmSuccess) onConfirmSuccess(selected.name);
       onClose();
     }, 1200);
   };
@@ -157,6 +142,10 @@ export const AssignReviewerModal: React.FC<AssignReviewerModalProps> = ({
           })}
         </div>
 
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{error}</div>
+        )}
+
         {/* Modal Action Buttons */}
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
           <button
@@ -168,7 +157,8 @@ export const AssignReviewerModal: React.FC<AssignReviewerModalProps> = ({
 
           <button
             onClick={handleConfirmSubmit}
-            className="px-6 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[14px] rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-2 active:scale-95"
+            disabled={!selectedId}
+            className="disabled:opacity-60 px-6 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[14px] rounded-xl shadow-xs transition-all cursor-pointer inline-flex items-center gap-2 active:scale-95"
           >
             <Bell className="w-4 h-4 fill-white/20" />
             <span>ส่งมอบการทบทวน</span>

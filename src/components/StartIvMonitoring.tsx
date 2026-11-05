@@ -1,44 +1,29 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   User,
   CheckCircle2,
   Clock,
   Flag,
   ChevronRight,
-  ShieldCheck,
   ArrowLeft,
   Camera,
   Sparkles,
-  Droplets,
   AlertTriangle,
   Upload,
   RotateCcw,
-  SlidersHorizontal,
-  Image as ImageIcon,
-  Bell,
   Activity,
-  Pencil,
   Info
 } from 'lucide-react';
 import { SkipRoundModal } from './SkipRoundModal';
-import { AiReviewDetailModal } from './AiReviewDetailModal';
-import { AssignReviewerModal } from './AssignReviewerModal';
+import { InspectionResult } from './InspectionResult';
+import { api, ApiError } from '../api/client';
+import { useAuth } from '../api/auth';
+import { fmtDateTime, holdMessage, qualityCheckLabels } from '../api/format';
+import type { SiteSelection } from '../api/selection';
+import type { Analysis, ArmCandidate, Quality, Site } from '../api/types';
 
 interface StartIvMonitoringProps {
-  patientData?: {
-    name?: string;
-    hnAn?: string;
-    ward?: string;
-    room?: string;
-    bed?: string;
-    needle?: string;
-    vein?: string;
-    site?: string;
-    progress?: string;
-    round?: string;
-    dueTimeText?: string;
-    dueHighlight?: string;
-  };
+  patientData?: SiteSelection;
   onBack?: () => void;
   onCancel?: () => void;
   onContinue?: () => void;
@@ -52,23 +37,81 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
   onContinue,
   onConfirmSkip
 }) => {
-  const [currentStep, setCurrentStep] = useState<number>(1);
+  // "inspect" = scheduled round of an existing IV site; "new_site" = start tracking a new needle.
+  const mode: 'inspect' | 'new_site' = patientData?.roundId ? 'inspect' : 'new_site';
+  const { user } = useAuth();
+  const [currentStep, setCurrentStep] = useState<number>(mode === 'inspect' ? 2 : 1);
   const [isSkipped, setIsSkipped] = useState<boolean>(false);
   const [showSkipModal, setShowSkipModal] = useState<boolean>(false);
-  const [isCaptured, setIsCaptured] = useState<boolean>(false);
-  const [reviewModalItem, setReviewModalItem] = useState<any | null>(null);
-  const [showAssignModal, setShowAssignModal] = useState<boolean>(false);
-  const [isInfiltrationReviewed, setIsInfiltrationReviewed] = useState<boolean>(false);
-  const [isPhlebitisReviewed, setIsPhlebitisReviewed] = useState<boolean>(false);
 
   // Form selections for Step 1
   const [bodySide, setBodySide] = useState<string>('ซ้าย');
   const [ivSiteLocation, setIvSiteLocation] = useState<string>('หลังมือซ้าย');
   const [selectedVeinId, setSelectedVeinId] = useState<string>('cephalic');
+  const [otherVein, setOtherVein] = useState<string>('');
+  const [startedAtText] = useState(() => fmtDateTime(new Date().toISOString()));
 
-  // AI Analysis Sub-States for Step 3
+  // Captured image + quality check (Step 2)
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [quality, setQuality] = useState<Quality | null>(null);
+  const [isCheckingQuality, setIsCheckingQuality] = useState(false);
+  const [allowManualQuality, setAllowManualQuality] = useState(false);
+  const [errorText, setErrorText] = useState<string | null>(null);
+
+  // AI analysis (inspect mode)
   const [aiAnalysisState, setAiAnalysisState] = useState<'ready' | 'processing' | 'result'>('ready');
   const [progressPercent, setProgressPercent] = useState<number>(0);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [armCandidates, setArmCandidates] = useState<ArmCandidate[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isCaptured =
+    !!imageFile &&
+    !!quality &&
+    quality.status !== 'RETAKE' &&
+    (quality.status !== 'MANUAL_REVIEW' || allowManualQuality);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
+
+  const handleImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setQuality(null);
+    setAllowManualQuality(false);
+    setAnalysis(null);
+    setArmCandidates([]);
+    setErrorText(null);
+    setIsCheckingQuality(true);
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      setQuality(await api.upload<Quality>('/api/ai/quality-check', form));
+    } catch (err) {
+      setErrorText(err instanceof ApiError ? err.message : 'ตรวจคุณภาพภาพไม่สำเร็จ');
+    } finally {
+      setIsCheckingQuality(false);
+    }
+  };
+
+  const resetCapture = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setQuality(null);
+    setAllowManualQuality(false);
+    setAnalysis(null);
+    setArmCandidates([]);
+    setErrorText(null);
+  };
 
   // Vein selection options
   const veinOptions = [
@@ -110,513 +153,89 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
     }
   ];
 
-  // Default Fallback Patient Data
   const patient = {
-    name: patientData?.name || 'ชื่อ-นามสกุล-คนไข้',
-    hnAn: patientData?.hnAn || 'HN34567890 · AN26080918',
-    ward: patientData?.ward || 'PICU',
-    room: patientData?.room || 'ห้อง A-01',
-    bed: patientData?.bed || 'เตียง C32',
-    needle: patientData?.needle || 'เข็ม #1',
-    vein: patientData?.vein || 'Cephalic vein',
-    site: patientData?.site || 'ท่อนแขนซ้าย',
-    progress: patientData?.progress || '98 / 168',
-    dueTimeText: patientData?.dueTimeText || 'กำหนดตรวจ 14:00 น. · เกินกำหนด',
-    dueHighlight: patientData?.dueHighlight || '00:18:24'
+    name: patientData?.name || '-',
+    hnAn: patientData?.hnAn || '-',
+    ward: patientData?.ward || '-',
+    room: patientData?.room || '-',
+    bed: patientData?.bed || '-',
+    needle: patientData?.needle || 'เข็มใหม่',
+    vein: patientData?.vein || '-',
+    site: patientData?.site || '-',
+    progress: patientData?.progress || '-',
+    dueTimeText: patientData?.dueTimeText || '',
+    dueHighlight: patientData?.dueHighlight || ''
   };
 
-  const handleStartAnalysis = () => {
+  const veinTitle = () => {
+    const option = veinOptions.find((v) => v.id === selectedVeinId);
+    if (selectedVeinId === 'other') return otherVein.trim() || 'Other';
+    return option?.title ?? 'Cephalic vein';
+  };
+
+  const runAnalysis = async (selectedArmId?: string) => {
+    if (!imageFile || !patientData?.roundId) return;
+    setErrorText(null);
     setAiAnalysisState('processing');
-    setProgressPercent(15);
-
-    setTimeout(() => setProgressPercent(45), 600);
-    setTimeout(() => setProgressPercent(80), 1300);
-    setTimeout(() => {
+    setProgressPercent(10);
+    // Real progress is not reported by the AI service; advance a soft indicator while waiting.
+    const timer = setInterval(() => setProgressPercent((p) => Math.min(p + (95 - p) * 0.08, 95)), 500);
+    try {
+      const form = new FormData();
+      form.append('image', imageFile);
+      if (selectedArmId) form.append('selected_arm_id', selectedArmId);
+      if (allowManualQuality) form.append('allow_manual_quality_review', 'true');
+      const result = await api.upload<Analysis>(`/api/rounds/${patientData.roundId}/inspect`, form);
       setProgressPercent(100);
-      setTimeout(() => {
+      setAnalysis(result);
+      setArmCandidates(result.manual_review_candidates ?? []);
+      if (result.status === 'OK') {
         setAiAnalysisState('result');
-      }, 500);
-    }, 2100);
+      } else {
+        setAiAnalysisState('ready');
+        if (result.status === 'QUALITY_HOLD') setQuality(result.quality);
+        setErrorText(
+          result.status === 'QUALITY_HOLD'
+            ? 'ภาพไม่ผ่านเกณฑ์คุณภาพสำหรับ AI กรุณาถ่ายภาพใหม่'
+            : holdMessage(result.preprocessing_reason)
+        );
+      }
+    } catch (err) {
+      setAiAnalysisState('ready');
+      setErrorText(err instanceof ApiError ? err.message : 'วิเคราะห์ภาพไม่สำเร็จ');
+    } finally {
+      clearInterval(timer);
+    }
   };
 
-  // If AI Analysis is complete ('result' state), render the dedicated AI Analysis Result Screen
-  if (currentStep === 3 && aiAnalysisState === 'result') {
+  const createSite = async () => {
+    if (!imageFile || !patientData) return;
+    setErrorText(null);
+    setIsSubmitting(true);
+    try {
+      const form = new FormData();
+      form.append('body_side', bodySide);
+      form.append('location', ivSiteLocation);
+      form.append('vein', veinTitle());
+      form.append('baseline_image', imageFile);
+      if (allowManualQuality) form.append('allow_manual_quality_review', 'true');
+      await api.upload<Site>(`/api/patients/${patientData.patientId}/iv-sites`, form);
+      if (onContinue) onContinue();
+      else if (onBack) onBack();
+    } catch (err) {
+      setErrorText(err instanceof ApiError ? err.message : 'บันทึก IV Site ไม่สำเร็จ');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (aiAnalysisState === 'result' && analysis) {
     return (
-      <div className="space-y-6 animate-fadeIn pb-12">
-        {/* Top Back Navigation Link */}
-        <div>
-          <button
-            onClick={() => setAiAnalysisState('ready')}
-            className="text-[#1E58E6] font-semibold text-[13.5px] hover:underline inline-flex items-center gap-1.5 cursor-pointer mb-2 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>กลับรายชื่อผู้ป่วย</span>
-          </button>
-
-          {/* Result Page Title Header */}
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              ผลการวิเคราะห์ภาพ IV Site ด้วย AI
-            </h1>
-            <p className="text-slate-500 text-[13px] font-medium mt-1">
-              รอบตรวจ 16 · บันทึกภาพเวลา 14:03 น. · ประมวลผลแล้วเสร็จภายใน 6.8 วินาที
-            </p>
-          </div>
-        </div>
-
-        {/* Main 2 Column Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column (4 Cols): Image Comparison Panel */}
-          <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs space-y-5">
-            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#1E58E6] flex items-center justify-center shrink-0">
-                <ImageIcon className="w-5 h-5 stroke-[2]" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-slate-900 text-[15px]">
-                  ภาพสำหรับเปรียบเทียบ
-                </h3>
-                <p className="text-[12px] text-slate-400 font-medium">
-                  เลือกภาพเพื่อดูรายละเอียดขนาดใหญ่
-                </p>
-              </div>
-            </div>
-
-            {/* Thumbnail 1: Previous Round */}
-            <div className="space-y-1.5">
-              <div className="relative w-full h-44 rounded-xl overflow-hidden border border-slate-200 shadow-2xs bg-slate-100">
-                <img
-                  src="/iv_baseline.png"
-                  alt="ภาพรอบก่อนหน้า"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="font-bold text-slate-900 text-[13px]">
-                ภาพรอบก่อนหน้า
-              </div>
-              <div className="text-[12px] text-slate-400 font-medium">
-                10 ส.ค. 2569 · 08:00 น.
-              </div>
-            </div>
-
-            {/* Thumbnail 2: Current Image with Red AI Circle Annotation */}
-            <div className="space-y-1.5 pt-1">
-              <div className="relative w-full h-44 rounded-xl overflow-hidden border border-slate-200 shadow-2xs bg-slate-100">
-                <img
-                  src="/iv_latest.png"
-                  alt="ภาพปัจจุบันตำแหน่งที่ AI เน้น"
-                  className="w-full h-full object-cover"
-                />
-                {/* Red Circle Highlight Overlay */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 border-2 border-red-500 bg-red-500/15 rounded-full flex items-center justify-center pointer-events-none animate-pulse">
-                  <div className="w-2 h-2 rounded-full bg-red-500" />
-                </div>
-              </div>
-              <div className="font-bold text-slate-900 text-[13px]">
-                ภาพปัจจุบันตำแหน่งที่ AI เน้น
-              </div>
-              <div className="text-[12px] text-slate-400 font-medium">
-                10 ส.ค. 2569 · 10:00 น.
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column (8 Cols): AI Analysis Details Cards */}
-          <div className="lg:col-span-8 space-y-6">
-            {/* CARD 1: INFILTRATION */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-5">
-              {/* Card Header */}
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#1E58E6] flex items-center justify-center shrink-0">
-                    <Droplets className="w-5 h-5 stroke-[2.2]" />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-[#1E58E6] uppercase tracking-wider block">
-                      INFILTRATION
-                    </span>
-                    <h3 className="text-lg font-extrabold text-slate-900 leading-snug">
-                      ภาวะสารน้ำรั่วออกนอกหลอดเลือด
-                    </h3>
-                  </div>
-                </div>
-
-                {isInfiltrationReviewed ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E6F4EA] text-[#10B981] font-semibold text-[12px] shrink-0 shadow-2xs">
-                    <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
-                    <span>ยืนยันไม่พบสิ่งผิดปกติ</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 font-semibold text-[12px] shrink-0">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>รอการยืนยัน</span>
-                  </span>
-                )}
-              </div>
-
-              {/* Finding Summary */}
-              <div className="space-y-1">
-                <h4 className="text-base font-extrabold text-[#10B981]">
-                  ไม่พบข้อสังเกตจากภาพ
-                </h4>
-                <p className="text-[13px] text-slate-500 font-medium">
-                  ระบบไม่พบพื้นที่บวมหรือการเปลี่ยนแปลงของผิวหนังที่ควรนำเสนอเพื่อทบทวน
-                </p>
-              </div>
-
-              {/* 4 Stat Columns Grid */}
-              <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-left">
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    Grade
-                  </span>
-                  <div className="text-lg font-extrabold text-[#1E58E6]">
-                    Grade 0
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    บุคลากรทางการแพทย์ยืนยัน
-                  </span>
-                </div>
-
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    ระดับความเสี่ยง
-                  </span>
-                  <div className="text-lg font-extrabold text-[#10B981]">
-                    ต่ำ
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    ข้อมูลจากผลที่ได้รับการยืนยัน
-                  </span>
-                </div>
-
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    ระดับความเชื่อมั่นของ AI
-                  </span>
-                  <div className="text-lg font-extrabold text-[#1E58E6]">
-                    96%
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    ค่าความมั่นใจของ AI
-                  </span>
-                </div>
-
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    ระยะเวลาประมวลผล
-                  </span>
-                  <div className="text-lg font-extrabold text-[#1E58E6]">
-                    3.2 วินาที
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    ระยะเวลาประมวลผล AI
-                  </span>
-                </div>
-              </div>
-
-              {/* Risk Gauge Bar */}
-              <div className="space-y-1.5 pt-1">
-                <div className="grid grid-cols-4 text-center text-[11px] font-semibold text-slate-400">
-                  <span className="text-[#10B981]">ต่ำ</span>
-                  <span>ปานกลาง</span>
-                  <span>สูง</span>
-                  <span>วิกฤต</span>
-                </div>
-                <div className="relative h-2 rounded-full bg-slate-100 overflow-hidden flex">
-                  <div className="w-1/4 bg-[#10B981] h-full" />
-                  <div className="w-1/4 bg-amber-400 h-full" />
-                  <div className="w-1/4 bg-orange-500 h-full" />
-                  <div className="w-1/4 bg-[#DC2626] h-full" />
-                  {/* Knob Indicator on Low Segment */}
-                  <div className="absolute top-1/2 left-[12.5%] -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white border-2 border-[#10B981] rounded-full shadow-xs" />
-                </div>
-              </div>
-
-              {/* Footer Action Row */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
-                <span className="text-[12.5px] text-slate-500 font-medium">
-                  พบความเสี่ยงในระบบ กรุณาทบทวน/ตรวจสอบผลการวิเคราะห์ (โดยผู้เชี่ยวชาญ)
-                </span>
-                {isInfiltrationReviewed ? (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button className="bg-[#10B981] text-white font-bold text-[13px] px-4 py-2.5 rounded-xl shadow-xs inline-flex items-center gap-1.5 cursor-default">
-                      <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                      <span>ทบทวนผลสำเร็จ</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setReviewModalItem({
-                          type: 'infiltration',
-                          title: 'INFILTRATION',
-                          patientName: patient.name,
-                          confidence: '96%'
-                        });
-                      }}
-                      title="แก้ไขการทบทวน"
-                      className="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 flex items-center justify-center cursor-pointer transition-colors shadow-2xs shrink-0"
-                    >
-                      <Pencil className="w-4 h-4 text-slate-500" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setReviewModalItem({
-                        type: 'infiltration',
-                        title: 'INFILTRATION',
-                        patientName: patient.name,
-                        confidence: '96%'
-                      });
-                    }}
-                    className="bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all shadow-xs inline-flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-                  >
-                    <span>ทบทวนผล Infiltration</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* CARD 2: PHLEBITIS */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-5">
-              {/* Card Header */}
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-red-50 text-[#DC2626] flex items-center justify-center shrink-0">
-                    <Activity className="w-5 h-5 stroke-[2.2]" />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-[#DC2626] uppercase tracking-wider block">
-                      PHLEBITIS
-                    </span>
-                    <h3 className="text-lg font-extrabold text-slate-900 leading-snug">
-                      ภาวะหลอดเลือดดำอักเสบ
-                    </h3>
-                  </div>
-                </div>
-
-                {isPhlebitisReviewed ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 font-semibold text-[12px] shrink-0">
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>ยืนยันพบสิ่งผิดปกติ</span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 font-semibold text-[12px] shrink-0">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>รอการยืนยัน</span>
-                  </span>
-                )}
-              </div>
-
-              {/* Finding Summary */}
-              <div className="space-y-1">
-                <h4 className="text-base font-extrabold text-[#DC2626]">
-                  {isPhlebitisReviewed ? 'ยืนยันว่าพบข้อสังเกตจากภาพ' : 'พบข้อสังเกตจากภาพ รอการทบทวน'}
-                </h4>
-                <p className="text-[13px] text-slate-500 font-medium">
-                  AI เน้นบริเวณรอยแดงตามแนวหลอดเลือดเมื่อเปรียบเทียบกับภาพก่อนหน้า
-                </p>
-              </div>
-
-              {/* 4 Stat Columns Grid */}
-              <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-left">
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    Grade
-                  </span>
-                  <div className="text-lg font-extrabold text-[#1E58E6]">
-                    {isPhlebitisReviewed ? 'Grade 3' : 'พบความเสี่ยง'}
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    บุคลากรทางการแพทย์ยืนยัน
-                  </span>
-                </div>
-
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    ระดับความเสี่ยง
-                  </span>
-                  <div className={`text-lg font-extrabold ${isPhlebitisReviewed ? 'text-[#F59E0B]' : 'text-[#DC2626]'}`}>
-                    {isPhlebitisReviewed ? 'สูง' : 'พบความเสี่ยง'}
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    ข้อมูลจากผลที่ได้รับการยืนยัน
-                  </span>
-                </div>
-
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    ระดับความเชื่อมั่นของ AI
-                  </span>
-                  <div className="text-lg font-extrabold text-[#1E58E6]">
-                    97%
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    ค่าความมั่นใจของ AI
-                  </span>
-                </div>
-
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-slate-400 font-medium block">
-                    ระยะเวลาประมวลผล
-                  </span>
-                  <div className="text-lg font-extrabold text-[#1E58E6]">
-                    3.6 วินาที
-                  </div>
-                  <span className="text-[11px] text-slate-400 block">
-                    ระยะเวลาประมวลผล AI
-                  </span>
-                </div>
-              </div>
-
-              {/* Risk Gauge Bar */}
-              <div className="space-y-1.5 pt-1">
-                <div className="grid grid-cols-4 text-center text-[11px] font-semibold text-slate-400">
-                  <span>ต่ำ</span>
-                  <span>ปานกลาง</span>
-                  <span className="text-[#DC2626]">สูง</span>
-                  <span>วิกฤต</span>
-                </div>
-                <div className="relative h-2 rounded-full bg-slate-100 overflow-hidden flex">
-                  <div className="w-1/4 bg-[#10B981]/30 h-full" />
-                  <div className="w-1/4 bg-amber-400/30 h-full" />
-                  <div className="w-1/4 bg-orange-500 h-full" />
-                  <div className="w-1/4 bg-[#DC2626]/30 h-full" />
-                  {/* Knob Indicator on High Segment */}
-                  <div className="absolute top-1/2 left-[62.5%] -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white border-2 border-orange-500 rounded-full shadow-xs" />
-                </div>
-              </div>
-
-              {/* Footer Action Row */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
-                <span className="text-[12.5px] text-slate-500 font-medium">
-                  พบความเสี่ยงในระบบ กรุณาทบทวน/ตรวจสอบผลการวิเคราะห์ (โดยผู้เชี่ยวชาญ)
-                </span>
-                {isPhlebitisReviewed ? (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button className="bg-[#10B981] text-white font-bold text-[13px] px-4 py-2.5 rounded-xl shadow-xs inline-flex items-center gap-1.5 cursor-default">
-                      <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-                      <span>ทบทวนผลสำเร็จ</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setReviewModalItem({
-                          type: 'phlebitis',
-                          title: 'PHLEBITIS',
-                          patientName: patient.name,
-                          confidence: '97%'
-                        });
-                      }}
-                      title="แก้ไขการทบทวน"
-                      className="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 flex items-center justify-center cursor-pointer transition-colors shadow-2xs shrink-0"
-                    >
-                      <Pencil className="w-4 h-4 text-slate-500" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setReviewModalItem({
-                        type: 'phlebitis',
-                        title: 'PHLEBITIS',
-                        patientName: patient.name,
-                        confidence: '97%'
-                      });
-                    }}
-                    className="bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all shadow-xs inline-flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-                  >
-                    <span>ทบทวนผล Phlebitis</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Responsibility Warning Box */}
-        <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5 stroke-[2]" />
-            </div>
-            <div>
-              <h4 className="font-extrabold text-slate-900 text-[14px]">
-                บุคลากรทางการแพทย์ผู้รับผิดชอบต้องทบทวนและยืนยันก่อนบันทึก
-              </h4>
-              <p className="text-[12.5px] text-slate-500 font-medium mt-0.5">
-                ผลจาก AI เป็นข้อมูลสนับสนุน มิใช่การวินิจฉัย และไม่กำหนดระดับความรุนแรง (Grade)
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 w-full sm:w-auto shrink-0">
-            <button
-              onClick={() => setShowAssignModal(true)}
-              className="flex-1 sm:flex-initial px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[13px] rounded-xl shadow-2xs transition-colors cursor-pointer inline-flex items-center justify-center gap-2"
-            >
-              <Bell className="w-4 h-4 text-slate-500" />
-              <span>มอบหมายผู้ทบทวน</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (onContinue) onContinue();
-                else if (onBack) onBack();
-              }}
-              className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl font-bold text-[13px] shadow-xs transition-all inline-flex items-center justify-center gap-2 cursor-pointer ${
-                isInfiltrationReviewed || isPhlebitisReviewed
-                  ? 'bg-[#1E58E6] hover:bg-blue-700 text-white active:scale-95'
-                  : 'bg-[#1E58E6] text-white hover:bg-blue-700 active:scale-95'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
-              <span>บันทึกผลการตรวจ</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Bottom Disclaimer Banner */}
-        <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex items-center gap-4 text-blue-950 mt-6">
-          <ShieldCheck className="w-8 h-8 text-[#1E58E6] shrink-0" />
-          <div className="text-[14px]">
-            <div className="font-bold text-blue-900">
-              AI เป็นเครื่องมือสนับสนุนการตรวจสอบภาพ
-            </div>
-            <p className="text-blue-700 mt-0.5 text-[12px]">
-              ผล AI ไม่ใช่การวินิจฉัย และทุกการบันทึกต้องได้รับการยืนยันโดยเจ้าหน้าที่
-            </p>
-          </div>
-        </div>
-
-        {/* AI Review Detail Modal */}
-        {reviewModalItem && (
-          <AiReviewDetailModal
-            item={reviewModalItem}
-            initialStep="form"
-            onClose={() => setReviewModalItem(null)}
-            onSaveSuccess={() => {
-              if (reviewModalItem?.type === 'infiltration') {
-                setIsInfiltrationReviewed(true);
-              } else if (reviewModalItem?.type === 'phlebitis') {
-                setIsPhlebitisReviewed(true);
-              }
-              setReviewModalItem(null);
-            }}
-          />
-        )}
-
-        {/* Assign Reviewer Modal */}
-        {showAssignModal && (
-          <AssignReviewerModal
-            onClose={() => setShowAssignModal(false)}
-            onConfirmSuccess={() => {
-              setShowAssignModal(false);
-            }}
-          />
-        )}
-      </div>
+      <InspectionResult
+        analysis={analysis}
+        onBack={() => (onBack ? onBack() : onCancel?.())}
+        onDone={() => (onContinue ? onContinue() : onBack?.())}
+      />
     );
   }
 
@@ -626,10 +245,10 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
       <div>
         <button
           onClick={() => {
-            if (currentStep > 1) {
+            if (currentStep > (mode === 'inspect' ? 2 : 1)) {
               setCurrentStep(currentStep - 1);
-            } else if (onBack || onCancel) {
-              (onBack || onCancel)();
+            } else {
+              (onBack || onCancel)?.();
             }
           }}
           className="text-[#1E58E6] font-semibold text-[13.5px] hover:underline inline-flex items-center gap-1.5 cursor-pointer mb-2 transition-colors"
@@ -641,13 +260,15 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
         {/* Section Header */}
         <div>
           <span className="text-[11px] font-bold text-[#1E58E6] tracking-wider uppercase block">
-            START IV MONITORING
+            {mode === 'inspect' ? 'IV SITE INSPECTION' : 'START IV MONITORING'}
           </span>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-            เริ่มติดตาม IV Site
+            {mode === 'inspect' ? `ตรวจ IV Site · ${patient.needle} ${patient.site}` : 'เริ่มติดตาม IV Site'}
           </h1>
           <p className="text-slate-500 text-[13px] font-normal mt-1">
-            เก็บข้อมูลเริ่มต้น ถ่ายภาพ Baseline แล้วเริ่มเวลา 168 ชั่วโมง
+            {mode === 'inspect'
+              ? `${patientData?.round ?? ''} · ${patient.dueTimeText} ${patient.dueHighlight}`
+              : 'เก็บข้อมูลเริ่มต้น ถ่ายภาพ Baseline แล้วเริ่มเวลา 168 ชั่วโมง'}
           </p>
         </div>
       </div>
@@ -679,13 +300,13 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
         <div className="shrink-0 self-start sm:self-auto">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] font-semibold text-[12px] shadow-2xs">
             <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>ยืนยันจาก HIS</span>
+            <span>{mode === 'inspect' ? `${patient.vein}` : 'IV Site ใหม่'}</span>
           </span>
         </div>
       </div>
 
       {/* Stepper Progress Header Card */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs">
+      <div className={`bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs ${mode === 'inspect' ? 'hidden' : ''}`}>
         <div className="flex items-center justify-between gap-2 sm:gap-4 max-w-4xl mx-auto">
           {/* Step 1 */}
           <div className="flex items-center gap-2.5">
@@ -912,6 +533,17 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
             </div>
           </div>
 
+          {selectedVeinId === 'other' && (
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-semibold text-slate-700 block">ระบุตำแหน่งเส้นเลือด</label>
+              <input
+                value={otherVein}
+                onChange={(e) => setOtherVein(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] focus:outline-none focus:border-[#1E58E6]"
+              />
+            </div>
+          )}
+
           {/* Bottom Info Metadata Box (Light gray container) */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-4.5 grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Col 1 */}
@@ -920,7 +552,7 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                 วันและเวลาเริ่ม
               </span>
               <div className="text-[13.5px] font-bold text-slate-900">
-                9 ส.ค. 2569 · 08:00 น.
+                {startedAtText}
               </div>
             </div>
 
@@ -930,7 +562,7 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                 ผู้เริ่มติดตาม
               </span>
               <div className="text-[13.5px] font-bold text-slate-900">
-                ชื่อ-นามสกุล-ผู้เริ่มติดตาม
+                {user.full_name}
               </div>
             </div>
 
@@ -940,164 +572,202 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                 ขอบเขต
               </span>
               <div className="text-[13.5px] font-bold text-slate-900">
-                แผนกเด็ก · PICU 2 / ห้อง A-01 / เตียง C32
+                {user.scope} · {patient.ward} / {patient.room} / {patient.bed}
               </div>
             </div>
           </div>
         </div>
       ) : currentStep === 2 ? (
         /* ========================================================================= */
-        /* STEP 2: บันทึกและตรวจคุณภาพของภาพ (Camera Viewfinder & Criteria Checklist)  */
+        /* STEP 2: บันทึกและตรวจคุณภาพของภาพ (Camera / File + AI quality check)      */
         /* ========================================================================= */
         <div className="bg-white rounded-2xl border border-slate-200/90 p-6 sm:p-7 shadow-2xs space-y-6 animate-fadeIn">
+          <input ref={cameraInputRef} type="file" accept="image/jpeg,image/png" capture="environment" className="hidden" onChange={handleImageSelected} />
+          <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleImageSelected} />
+
           {/* Step Header */}
           <div className="flex items-start gap-3.5">
             <div className="w-8 h-8 rounded-full bg-[#1E58E6] text-white flex items-center justify-center shrink-0 font-bold text-[14px] shadow-xs mt-0.5">
-              2
+              {mode === 'inspect' ? <Camera className="w-4 h-4" /> : 2}
             </div>
             <div>
               <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 leading-snug">
-                จัดทำภาพอ้างอิงเริ่มต้น (Baseline)
+                {mode === 'inspect' ? 'ถ่ายภาพ IV Site รอบนี้' : 'จัดทำภาพอ้างอิงเริ่มต้น (Baseline)'}
               </h3>
               <p className="text-[13px] text-slate-400 font-normal mt-0.5">
-                ภาพนี้จะมาจากรอบตรวจตามกำหนด 84 รอบของเข็มใหม่ และไม่ปะปนกับภาพของเข็มเดิม
+                {mode === 'inspect'
+                  ? 'ภาพจะถูกส่งให้ AI วิเคราะห์ Infiltration / Phlebitis และเปรียบเทียบกับภาพก่อนหน้า'
+                  : 'ภาพนี้จะใช้เปรียบเทียบกับทุกรอบตรวจของเข็มใหม่ และไม่ส่งให้ AI วิเคราะห์'}
               </p>
             </div>
           </div>
 
-          {/* 2 Column Main Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left 7 Cols: Camera Viewfinder / Captured Image Container */}
+            {/* Left: viewfinder / captured image */}
             <div
               className={`lg:col-span-7 rounded-2xl h-[360px] sm:h-[400px] relative flex flex-col items-center justify-center p-6 overflow-hidden border transition-all ${
-                isCaptured
-                  ? 'border-2 border-emerald-500 shadow-md bg-[#0B1528]'
-                  : 'bg-[#0B1528] border-slate-800 shadow-inner'
+                isCaptured ? 'border-2 border-emerald-500 shadow-md bg-[#0B1528]' : 'bg-[#0B1528] border-slate-800 shadow-inner'
               }`}
             >
-              {isCaptured ? (
-                <>
-                  {/* Captured Real IV Image Background */}
-                  <img
-                    src="/iv_latest.png"
-                    alt="Captured IV Site"
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
+              {imagePreview && <img src={imagePreview} alt="Captured IV Site" className="absolute inset-0 w-full h-full object-contain" />}
 
-                  {/* Corner Brackets Framing Overlay */}
-                  <div className="absolute inset-6 pointer-events-none flex flex-col justify-between p-2 z-10">
-                    <div className="flex justify-between">
-                      <div className="w-6 h-6 border-t-2 border-l-2 border-emerald-400" />
-                      <div className="w-6 h-6 border-t-2 border-r-2 border-emerald-400" />
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="w-6 h-6 border-b-2 border-l-2 border-emerald-400" />
-                      <div className="w-6 h-6 border-b-2 border-r-2 border-emerald-400" />
-                    </div>
-                  </div>
-
-                  {/* Translucent Overlay Card Centered */}
-                  <div className="relative z-20 bg-slate-950/75 backdrop-blur-md rounded-2xl p-6 text-center text-white space-y-2 border border-white/10 max-w-xs shadow-xl animate-fadeIn">
-                    <div className="w-12 h-12 rounded-full bg-[#10B981] text-white flex items-center justify-center mx-auto mb-3 shadow-md">
-                      <CheckCircle2 className="w-7 h-7 stroke-[2.5]" />
-                    </div>
-                    <h4 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                      ภาพพร้อมใช้งาน
-                    </h4>
-                    <p className="text-[12.5px] text-slate-200 font-normal">
-                      เห็น IV Site และบริเวณโดยรอบชัดเจน
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Camera Viewfinder State */}
-                  {/* White Camera Framing Overlay Corner Brackets */}
-                  <div className="absolute inset-6 pointer-events-none flex flex-col justify-between p-2">
-                    <div className="flex justify-between">
-                      <div className="w-8 h-8 border-t-2 border-l-2 border-white" />
-                      <div className="w-8 h-8 border-t-2 border-r-2 border-white" />
-                    </div>
-                    <div className="flex justify-between">
-                      <div className="w-8 h-8 border-b-2 border-l-2 border-white" />
-                      <div className="w-8 h-8 border-b-2 border-r-2 border-white" />
-                    </div>
-                  </div>
-
-                  {/* Center Camera Overlay Icon & Prompt Text */}
-                  <div className="text-center space-y-2 relative z-10">
-                    <div className="w-14 h-14 rounded-full bg-white/10 text-slate-300 flex items-center justify-center mx-auto mb-3 backdrop-blur-xs">
-                      <Camera className="w-7 h-7 stroke-[1.8]" />
-                    </div>
-                    <h4 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                      จัดตำแหน่ง IV Site ให้อยู่กลางกรอบ
-                    </h4>
-                    <p className="text-[12.5px] text-slate-400 font-normal max-w-xs mx-auto">
-                      หลีกเลี่ยงข้อมูลที่สามารถระบุตัวผู้ป่วย
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Right 5 Cols: Image Quality Criteria Panel */}
-            <div className="lg:col-span-5 bg-slate-50/80 border border-slate-200/90 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-6">
-              <div className="space-y-4">
-                <h4 className="text-[15px] font-extrabold text-slate-900 border-b border-slate-200/80 pb-3">
-                  เกณฑ์คุณภาพของภาพ
-                </h4>
-
-                {/* 5 Quality Criteria Checklist Items */}
-                <div className="space-y-3">
-                  {[
-                    'ภาพคมชัด',
-                    'แสงเพียงพอ',
-                    'เห็น IV Site ครบถ้วน',
-                    'ไม่มีสิ่งบดบัง',
-                    'สามารถใช้เปรียบเทียบถัดไป'
-                  ].map((text, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-[13px]">
-                      <div className="flex items-center gap-2 text-slate-700 font-medium">
-                        {isCaptured ? (
-                          <CheckCircle2 className="w-4 h-4 text-[#10B981] shrink-0 stroke-[2.5]" />
-                        ) : (
-                          <Clock className="w-4 h-4 text-slate-400 shrink-0" />
-                        )}
-                        <span>{text}</span>
-                      </div>
-                      {isCaptured ? (
-                        <span className="bg-[#E6F4EA] text-[#10B981] font-semibold text-[11px] px-2.5 py-0.5 rounded-md flex items-center gap-1">
-                          ✓ ผ่านเกณฑ์
-                        </span>
-                      ) : (
-                        <span className="bg-slate-200/70 text-slate-500 font-semibold text-[11px] px-2.5 py-0.5 rounded-md">
-                          รอการตรวจสอบ
-                        </span>
-                      )}
-                    </div>
-                  ))}
+              <div className="absolute inset-6 pointer-events-none flex flex-col justify-between p-2 z-10">
+                <div className="flex justify-between">
+                  <div className={`w-7 h-7 border-t-2 border-l-2 ${isCaptured ? 'border-emerald-400' : 'border-white'}`} />
+                  <div className={`w-7 h-7 border-t-2 border-r-2 ${isCaptured ? 'border-emerald-400' : 'border-white'}`} />
+                </div>
+                <div className="flex justify-between">
+                  <div className={`w-7 h-7 border-b-2 border-l-2 ${isCaptured ? 'border-emerald-400' : 'border-white'}`} />
+                  <div className={`w-7 h-7 border-b-2 border-r-2 ${isCaptured ? 'border-emerald-400' : 'border-white'}`} />
                 </div>
               </div>
 
-              {/* 2 Bottom Buttons inside Quality Panel */}
+              {aiAnalysisState === 'processing' ? (
+                <div className="relative z-20 bg-slate-950/80 backdrop-blur-md rounded-2xl p-6 text-center text-white space-y-3 border border-white/10 w-72 shadow-xl">
+                  <Sparkles className="w-8 h-8 mx-auto text-blue-300 animate-pulse" />
+                  <h4 className="text-base font-bold">AI กำลังวิเคราะห์ภาพ...</h4>
+                  <div className="h-2 rounded-full bg-white/15 overflow-hidden">
+                    <div className="h-full bg-blue-400 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+                  </div>
+                  <p className="text-[12px] text-slate-300">ตรวจหาแขน แยกขอบเขต และประเมินด้วยโมเดล อาจใช้เวลาหลายวินาทีบน CPU</p>
+                </div>
+              ) : isCheckingQuality ? (
+                <div className="relative z-20 bg-slate-950/75 backdrop-blur-md rounded-2xl px-6 py-4 text-white text-[13px] font-semibold">
+                  กำลังตรวจคุณภาพภาพ...
+                </div>
+              ) : imagePreview && quality ? (
+                <div className="relative z-20 bg-slate-950/75 backdrop-blur-md rounded-2xl p-5 text-center text-white space-y-1.5 border border-white/10 max-w-xs shadow-xl">
+                  <div
+                    className={`w-11 h-11 rounded-full text-white flex items-center justify-center mx-auto mb-2 shadow-md ${
+                      quality.status === 'PASS' ? 'bg-[#10B981]' : quality.status === 'MANUAL_REVIEW' ? 'bg-amber-500' : 'bg-red-500'
+                    }`}
+                  >
+                    {quality.status === 'PASS' ? <CheckCircle2 className="w-6 h-6 stroke-[2.5]" /> : <AlertTriangle className="w-6 h-6" />}
+                  </div>
+                  <h4 className="text-base font-bold tracking-tight">
+                    {quality.status === 'PASS' ? 'ภาพพร้อมใช้งาน' : quality.status === 'MANUAL_REVIEW' ? 'ภาพควรตรวจสอบ' : 'ต้องถ่ายภาพใหม่'}
+                  </h4>
+                  <p className="text-[12px] text-slate-200">
+                    {[...quality.reasons, ...quality.warnings].join(' · ') || 'เห็น IV Site และบริเวณโดยรอบชัดเจน'}
+                  </p>
+                </div>
+              ) : !imagePreview ? (
+                <div className="text-center space-y-2 relative z-10">
+                  <div className="w-14 h-14 rounded-full bg-white/10 text-slate-300 flex items-center justify-center mx-auto mb-3 backdrop-blur-xs">
+                    <Camera className="w-7 h-7 stroke-[1.8]" />
+                  </div>
+                  <h4 className="text-base sm:text-lg font-bold text-white tracking-tight">จัดตำแหน่ง IV Site ให้อยู่กลางกรอบ</h4>
+                  <p className="text-[12.5px] text-slate-400 font-normal max-w-xs mx-auto">
+                    หลีกเลี่ยงข้อมูลที่สามารถระบุตัวผู้ป่วย เช่น ป้ายชื่อ หรือ สายรัดข้อมือ
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Right: quality checklist */}
+            <div className="lg:col-span-5 bg-slate-50/80 border border-slate-200/90 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-6">
+              <div className="space-y-4">
+                <h4 className="text-[15px] font-extrabold text-slate-900 border-b border-slate-200/80 pb-3">เกณฑ์คุณภาพของภาพ</h4>
+                <div className="space-y-3">
+                  {Object.entries(quality?.checks ?? Object.fromEntries(Object.keys(qualityCheckLabels).slice(1, 9).map((k) => [k, 'PENDING'])))
+                    .filter(([key]) => key in qualityCheckLabels)
+                    .map(([key, state]) => (
+                      <div key={key} className="flex items-center justify-between text-[13px]">
+                        <div className="flex items-center gap-2 text-slate-700 font-medium">
+                          {state === 'PASS' ? (
+                            <CheckCircle2 className="w-4 h-4 text-[#10B981] shrink-0 stroke-[2.5]" />
+                          ) : state === 'PENDING' || state.startsWith('NOT_ASSESSED') ? (
+                            <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                          ) : (
+                            <AlertTriangle className={`w-4 h-4 shrink-0 ${state === 'REJECT' ? 'text-red-500' : 'text-amber-500'}`} />
+                          )}
+                          <span>{qualityCheckLabels[key]}</span>
+                        </div>
+                        <span
+                          className={`font-semibold text-[11px] px-2.5 py-0.5 rounded-md ${
+                            state === 'PASS'
+                              ? 'bg-[#E6F4EA] text-[#10B981]'
+                              : state === 'REJECT'
+                                ? 'bg-red-50 text-red-600'
+                                : state === 'PENDING' || state.startsWith('NOT_ASSESSED')
+                                  ? 'bg-slate-200/70 text-slate-500'
+                                  : 'bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {state === 'PASS'
+                            ? '✓ ผ่านเกณฑ์'
+                            : state === 'REJECT'
+                              ? 'ไม่ผ่าน'
+                              : state === 'PENDING'
+                                ? 'รอการตรวจสอบ'
+                                : state.startsWith('NOT_ASSESSED')
+                                  ? 'ตรวจโดย AI'
+                                  : 'ควรตรวจสอบ'}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+
+                {quality?.status === 'MANUAL_REVIEW' && (
+                  <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12.5px] text-amber-900 font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowManualQuality}
+                      onChange={(e) => setAllowManualQuality(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-[#1E58E6]"
+                    />
+                    <span>ข้าพเจ้าตรวจภาพแล้ว ยืนยันว่าเห็น IV Site ชัดเจนพอสำหรับใช้งาน</span>
+                  </label>
+                )}
+
+                {armCandidates.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[13px] font-bold text-slate-800">เลือกแขนที่มี IV Site</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {armCandidates.map((arm) => (
+                        <button
+                          key={arm.arm_id}
+                          onClick={() => runAnalysis(arm.arm_id)}
+                          className="rounded-xl border border-slate-200 bg-white hover:border-[#1E58E6] overflow-hidden text-[12px] font-bold text-slate-700 cursor-pointer"
+                        >
+                          <img src={arm.preview_data_url} alt={arm.arm_id} className="w-full h-24 object-cover" />
+                          <div className="py-1">{arm.arm_id}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {errorText && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-[12.5px] font-medium text-red-700">{errorText}</div>
+                )}
+              </div>
+
               <div className="space-y-2.5 pt-2">
-                <button className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[13.5px] py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={aiAnalysisState === 'processing'}
+                  className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[13.5px] py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-2xs cursor-pointer disabled:opacity-60"
+                >
                   <Upload className="w-4 h-4 text-slate-500" />
                   <span>นำเข้าภาพ</span>
                 </button>
-
-                {isCaptured ? (
+                {imageFile ? (
                   <button
-                    onClick={() => setIsCaptured(false)}
-                    className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[13.5px] py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-2xs transition-colors cursor-pointer"
+                    onClick={() => {
+                      resetCapture();
+                      cameraInputRef.current?.click();
+                    }}
+                    disabled={aiAnalysisState === 'processing'}
+                    className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[13.5px] py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-2xs cursor-pointer disabled:opacity-60"
                   >
                     <RotateCcw className="w-4 h-4 text-slate-500" />
                     <span>บันทึกภาพใหม่</span>
                   </button>
                 ) : (
                   <button
-                    onClick={() => setIsCaptured(true)}
-                    className="w-full bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[13.5px] py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="w-full bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[13.5px] py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                   >
                     <Camera className="w-4 h-4" />
                     <span>บันทึกภาพ</span>
@@ -1120,7 +790,7 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
           {/* Titles & Description */}
           <div className="space-y-2 max-w-xl mx-auto">
             <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-              พร้อมเริ่มติดตาม{patientData?.needle || 'เข็ม #3'}
+              พร้อมเริ่มติดตาม{patientData?.needle || 'เข็มใหม่'}
             </h3>
             <p className="text-[13px] text-slate-400 font-normal leading-relaxed">
               เมื่อยืนยัน ระบบจะสร้างตารางใหม่จากรอบที่ 1 ตรวจทุก 2 ชั่วโมงจนสะสมครบ 168 ชั่วโมง โดยไม่เปลี่ยนตารางของ IV Site เดิม
@@ -1135,7 +805,7 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                 หมายเลข IV Site
               </span>
               <div className="text-base font-extrabold text-slate-900">
-                {patientData?.needle || 'เข็ม #3'}
+                {patientData?.needle || 'เข็มใหม่ (กำหนดเลขอัตโนมัติ)'}
               </div>
             </div>
 
@@ -1155,7 +825,7 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                 ตำแหน่งเส้นเลือด
               </span>
               <div className="text-base font-extrabold text-slate-900">
-                {veinOptions.find(v => v.id === selectedVeinId)?.title || 'Cephalic vein'}
+                {veinTitle()}
               </div>
             </div>
 
@@ -1165,7 +835,7 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
                 ภาพอ้างอิงเริ่มต้น
               </span>
               <div className="text-base font-extrabold text-slate-900">
-                ผ่านเกณฑ์คุณภาพของภาพ
+                {quality?.status === 'PASS' ? 'ผ่านเกณฑ์คุณภาพของภาพ' : 'ยืนยันคุณภาพโดยเจ้าหน้าที่'}
               </div>
             </div>
 
@@ -1201,43 +871,61 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
       )}
 
       {/* Main Bottom Actions Row */}
+      {currentStep === 3 && errorText && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{errorText}</div>
+      )}
       <div className="flex items-center justify-between gap-4 pt-2">
-        <button
-          onClick={() => {
-            if (currentStep > 1) {
-              setCurrentStep(currentStep - 1);
-            } else if (onCancel || onBack) {
-              (onCancel || onBack)();
-            }
-          }}
-          className="px-6 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-[14px] rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95"
-        >
-          {currentStep > 1 ? 'ย้อนกลับ' : 'ยกเลิก'}
-        </button>
-
-        {currentStep === 3 ? (
+        <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              if (onContinue) onContinue();
-              else if (onBack) onBack();
+              if (currentStep > (mode === 'inspect' ? 2 : 1)) {
+                setCurrentStep(currentStep - 1);
+              } else {
+                (onCancel || onBack)?.();
+              }
             }}
-            className="px-6 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[14px] rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+            className="px-6 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-[14px] rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95"
+          >
+            {currentStep > (mode === 'inspect' ? 2 : 1) ? 'ย้อนกลับ' : 'ยกเลิก'}
+          </button>
+          {mode === 'inspect' && (
+            <button
+              onClick={() => setShowSkipModal(true)}
+              disabled={isSkipped || aiAnalysisState === 'processing'}
+              className="px-5 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-[14px] rounded-xl shadow-2xs cursor-pointer inline-flex items-center gap-2 disabled:opacity-60"
+            >
+              <Flag className="w-4 h-4" />
+              <span>ข้ามรอบ</span>
+            </button>
+          )}
+        </div>
+
+        {mode === 'inspect' ? (
+          <button
+            onClick={() => runAnalysis()}
+            disabled={!isCaptured || aiAnalysisState === 'processing'}
+            className={`px-6 py-2.5 rounded-xl font-bold text-[14px] inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer ${
+              !isCaptured || aiAnalysisState === 'processing'
+                ? 'bg-[#93C5FD] text-white cursor-not-allowed opacity-80'
+                : 'bg-[#1E58E6] hover:bg-blue-700 text-white active:scale-95'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>{aiAnalysisState === 'processing' ? 'กำลังวิเคราะห์...' : 'วิเคราะห์ด้วย AI'}</span>
+          </button>
+        ) : currentStep === 3 ? (
+          <button
+            onClick={createSite}
+            disabled={isSubmitting}
+            className="px-6 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[14px] rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-60"
           >
             <Activity className="w-4.5 h-4.5 stroke-[2.5]" />
-            <span>ยืนยัน IV Site</span>
+            <span>{isSubmitting ? 'กำลังบันทึก...' : 'ยืนยัน IV Site'}</span>
           </button>
         ) : (
           <button
-            onClick={() => {
-              if (currentStep < 3) {
-                setCurrentStep(currentStep + 1);
-              } else if (onContinue) {
-                onContinue();
-              } else if (onBack) {
-                onBack();
-              }
-            }}
-            disabled={currentStep === 2 && !isCaptured}
+            onClick={() => setCurrentStep(currentStep + 1)}
+            disabled={(currentStep === 2 && !isCaptured) || (currentStep === 1 && selectedVeinId === 'other' && !otherVein.trim())}
             className={`px-6 py-2.5 rounded-xl font-bold text-[14px] inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer ${
               currentStep === 2 && !isCaptured
                 ? 'bg-[#93C5FD] text-white cursor-not-allowed opacity-80'
@@ -1288,12 +976,13 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
       {/* Skip Round Modal */}
       {showSkipModal && (
         <SkipRoundModal
+          roundId={patientData?.roundId}
           patientName={patient.name}
           hnAn={patient.hnAn}
           ward={patient.ward}
           room={patient.room}
           bed={patient.bed}
-          dueTime="12:00 น."
+          dueTime={patient.dueTimeText}
           onClose={() => setShowSkipModal(false)}
           onConfirmSuccess={() => {
             setIsSkipped(true);
@@ -1307,22 +996,6 @@ export const StartIvMonitoring: React.FC<StartIvMonitoringProps> = ({
         />
       )}
 
-      {/* AI Review Detail Modal */}
-      {reviewModalItem && (
-        <AiReviewDetailModal
-          item={reviewModalItem}
-          initialStep="form"
-          onClose={() => setReviewModalItem(null)}
-          onSaveSuccess={() => {
-            if (reviewModalItem?.type === 'infiltration') {
-              setIsInfiltrationReviewed(true);
-            } else if (reviewModalItem?.type === 'phlebitis') {
-              setIsPhlebitisReviewed(true);
-            }
-            setReviewModalItem(null);
-          }}
-        />
-      )}
     </div>
   );
 };

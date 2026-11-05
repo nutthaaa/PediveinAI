@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import dashboardHeaderLogo from '../assets/dashboard-header-logo.png';
 import { RoundsInspection } from './RoundsInspection';
 import { PediatricPatients } from './PediatricPatients';
@@ -14,8 +14,16 @@ import { HisConnectionStatus } from './HisConnectionStatus';
 import { UserManagement } from './UserManagement';
 import { AuditLog } from './AuditLog';
 import { SystemSettings } from './SystemSettings';
+import { ModelManagement } from './ModelManagement';
 import { StartIvMonitoring } from './StartIvMonitoring';
 import { SinglePatientDetail } from './SinglePatientDetail';
+import { api } from '../api/client';
+import { useAuth } from '../api/auth';
+import { useApi, useNow } from '../api/useApi';
+import { countdown, fmtTime } from '../api/format';
+import { selectRow, type SiteSelection } from '../api/selection';
+import type { BoardRow, Notification, OverviewStats, SystemStatus } from '../api/types';
+import type { OverviewData } from './DashboardOverview';
 import {
   Bell,
   Search,
@@ -36,6 +44,8 @@ import {
   Database,
   ShieldCheck,
   Sliders,
+  BrainCircuit,
+  Menu,
   Camera,
   BedDouble,
   Check,
@@ -51,84 +61,116 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [tableFilter, setTableFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [notificationCount, setNotificationCount] = useState(8);
-  const [selectedNeedlePatient, setSelectedNeedlePatient] = useState<any | null>(null);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [selectedNeedlePatient, setSelectedNeedlePatient] = useState<SiteSelection | null>(null);
+  // Page to return to from the patient detail, and the tab of the patients page.
+  const [patientReturnNav, setPatientReturnNav] = useState('rounds');
+  const [patientsTab, setPatientsTab] = useState<'all' | 'my_patients'>('all');
+  // Below the lg breakpoint the sidebar is an off-canvas drawer opened from the top-left button.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user } = useAuth();
+  const now = useNow(1000);
 
-  const handleInspectNeedle = (patient: any) => {
+  const overview = useApi(
+    () => api.get<OverviewData & { stats: OverviewStats; rows: BoardRow[] }>('/api/dashboard/overview'),
+    []
+  );
+  const recentNotifications = useApi(() => api.get<Notification[]>('/api/notifications?limit=5'), []);
+  const systemStatus = useApi(() => api.get<SystemStatus>('/api/system/status'), []);
+
+  const refreshUnread = () =>
+    api
+      .get<{ count: number }>('/api/notifications/unread-count')
+      .then((r) => setNotificationCount(r.count))
+      .catch(() => undefined);
+
+  useEffect(() => {
+    refreshUnread();
+    const timer = setInterval(() => {
+      refreshUnread();
+      if (activeNav === 'overview') {
+        overview.reload();
+        recentNotifications.reload();
+      }
+    }, 30000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNav]);
+
+  useEffect(() => {
+    if (activeNav === 'overview') {
+      overview.reload();
+      recentNotifications.reload();
+    }
+    refreshUnread();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeNav]);
+
+  // Remember the list page the user came from (not the patient/inspection screens themselves).
+  const rememberReturnNav = () => {
+    if (!['patient_detail', 'single_patient', 'start_monitoring'].includes(activeNav)) setPatientReturnNav(activeNav);
+  };
+
+  const handleInspectNeedle = (patient: SiteSelection) => {
+    rememberReturnNav();
     setSelectedNeedlePatient(patient);
     setActiveNav('start_monitoring');
   };
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 800);
+  const openPatient = (patient: SiteSelection) => {
+    rememberReturnNav();
+    setSelectedNeedlePatient(patient);
+    setActiveNav('patient_detail');
   };
 
-  // Sample Patients Data for Table
-  const patients = [
-    {
-      id: '1',
-      name: 'เด็กชายสมชาย ใจดี',
-      hn: 'HN56789012',
-      site: 'ท่อนแขนซ้าย',
-      ward: 'PICU',
-      bed: 'เตียง B04',
-      progress: '32 / 168 ชม.',
-      round: 'รอบ 16 / 48',
-      statusType: 'overdue',
-      statusText: '14:00 น. เกินกำหนด 00:18:24',
-      aiStatus: 'Phlebitis',
-      aiType: 'phlebitis',
-      urgency: 'high'
-    },
-    {
-      id: '2',
-      name: 'เด็กหญิงปิยะดา รักษ์ดี',
-      hn: 'HN56789012',
-      site: 'หลังมือขวา',
-      ward: 'PICU',
-      bed: 'เตียง A02',
-      progress: '28 / 168 ชม.',
-      round: 'รอบ 14 / 48',
-      statusType: 'due',
-      statusText: '14:00 น. ถึงกำหนดตรวจ',
-      aiStatus: 'Infiltration',
-      aiType: 'infiltration',
-      urgency: 'high'
-    },
-    {
-      id: '3',
-      name: 'เด็กชายกิตติศักดิ์ มั่นคง',
-      hn: 'HN56789012',
-      site: 'หลังมือขวา',
-      ward: 'PICU',
-      bed: 'เตียง C12',
-      progress: '14 / 168 ชม.',
-      round: 'รอบ 7 / 48',
-      statusType: 'near_due',
-      statusText: '16:00 น. เหลือ 01:42:10',
-      aiStatus: 'ไม่พบข้อสังเกต',
-      aiType: 'normal',
-      urgency: 'normal'
-    },
-    {
-      id: '4',
-      name: 'เด็กหญิงนภา วงศ์สว่าง',
-      hn: 'HN56789012',
-      site: 'หลังมือขวา',
-      ward: 'PICU',
-      bed: 'เตียง B12',
-      progress: '4 / 168 ชม.',
-      round: 'รอบ 2 / 48',
-      statusType: 'near_due',
-      statusText: '14:00 น. เหลือ 00:42:18',
-      aiStatus: 'ไม่พบข้อสังเกต',
-      aiType: 'normal',
-      urgency: 'normal'
-    }
-  ];
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([overview.reload(), recentNotifications.reload(), systemStatus.reload()]);
+    setIsRefreshing(false);
+  };
+
+  const rows = overview.data?.rows ?? [];
+  const patients = rows.map((row) => {
+    const round = row.next_round;
+    const latest = row.latest_analysis;
+    const statusType = round?.schedule_status === 'upcoming' ? 'near_due' : round?.schedule_status ?? 'near_due';
+    const flagged = latest?.prediction_issued
+      ? latest.condition_prediction === 'INF' ? 'infiltration' : 'phlebitis'
+      : 'normal';
+    return {
+      id: String(row.id),
+      name: row.patient.full_name,
+      hn: row.patient.hn,
+      site: row.location,
+      ward: row.patient.ward,
+      bed: row.patient.bed ?? '-',
+      progress: `${Math.floor(row.elapsed_hours)} / ${row.duration_hours} ชม.`,
+      round: round ? `รอบ ${round.round_no} / ${row.total_rounds}` : '-',
+      statusType,
+      statusText: round ? fmtTime(round.due_at) : '-',
+      aiStatus: flagged === 'normal' ? 'ไม่พบข้อสังเกต' : flagged === 'infiltration' ? 'Infiltration' : 'Phlebitis',
+      aiType: latest?.review_status === 'pending_review' ? flagged : 'normal',
+      urgency: statusType === 'overdue' ? 'high' : 'normal',
+      dueClock: round ? fmtTime(round.due_at) : '-',
+      countdownText: !round
+        ? ''
+        : round.schedule_status === 'overdue'
+          ? `เกินกำหนด ${countdown(round.due_at, now)}`
+          : round.schedule_status === 'upcoming'
+            ? `เหลือ ${countdown(round.due_at, now)}`
+            : 'ถึงกำหนดตรวจ'
+    };
+  });
+
+  const overviewNotifications = (recentNotifications.data ?? []).map((n) => ({
+    id: n.id,
+    category: n.category,
+    title: n.title,
+    body: n.body,
+    timeText: fmtTime(n.created_at)
+  }));
+
+  const aiStatus = systemStatus.data?.ai.status;
 
   const filteredPatients = patients.filter((p) => {
     if (tableFilter === 'ai_review' && p.aiType === 'normal') return false;
@@ -153,7 +195,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       {/* ========================================================================= */}
       {/* LEFT SIDEBAR                                                              */}
       {/* ========================================================================= */}
-      <aside className="w-64 sm:w-72 bg-[#012351] text-white flex flex-col justify-between shrink-0 h-screen border-r border-[#0a3166] shadow-lg overflow-y-auto no-scrollbar">
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+      <aside
+        // Choosing any menu item closes the drawer on small screens.
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('button')) setSidebarOpen(false);
+        }}
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} bg-[#012351] text-white flex flex-col justify-between shrink-0 h-screen border-r border-[#0a3166] shadow-lg overflow-y-auto no-scrollbar`}
+      >
         <div className="p-4 sm:p-5">
           {/* Logo & Title Header */}
           <div className="pb-5 border-b border-[#0e3770]/80 flex flex-col items-center gap-2 text-center">
@@ -351,6 +402,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     <span>บันทึกตรวจสอบย้อนหลัง</span>
                   </button>
                 </li>
+                {(user.role === 'admin' || user.role === 'head_nurse') && (
+                  <li>
+                    <button
+                      onClick={() => setActiveNav('models')}
+                      className={`w-full flex items-center gap-3.5 px-3.5 py-2.5 rounded-xl font-medium transition-all text-left ${activeNav === 'models'
+                        ? 'bg-gradient-to-r from-[#1453C7] to-[#1C60E2] text-white'
+                        : 'text-slate-200 hover:bg-[#063068] hover:text-white'
+                        }`}
+                    >
+                      <BrainCircuit className="w-5 h-5 shrink-0 text-slate-300" />
+                      <span>จัดการโมเดล AI</span>
+                    </button>
+                  </li>
+                )}
                 <li>
                   <button
                     onClick={() => setActiveNav('settings')}
@@ -373,13 +438,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           {/* HIS Connection Pill */}
           <div className="bg-[#031d42] rounded-xl p-3 border border-[#0c3977]/80 flex items-center gap-3">
             <div className="relative">
-              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-              <div className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-75"></div>
+              <div className={`w-3 h-3 rounded-full ${aiStatus === 'READY' ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
+              <div className={`absolute inset-0 rounded-full animate-ping opacity-75 ${aiStatus === 'READY' ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
             </div>
             <div className="flex flex-col text-[12px]">
-              <span className="font-bold text-white leading-snug">เชื่อมต่อ HIS</span>
-              <span className="text-slate-400 text-[11px]">สถานะ: เชื่อมต่อสำเร็จ</span>
-              <span className="text-slate-500 text-[10px]">อัปเดตล่าสุด 05:30 น.</span>
+              <span className="font-bold text-white leading-snug">บริการ AI</span>
+              <span className="text-slate-400 text-[11px]">
+                สถานะ: {aiStatus === 'READY' ? 'พร้อมใช้งาน' : aiStatus === 'NOT_READY' ? 'กำลังโหลดโมเดล' : aiStatus ? 'ไม่สามารถเชื่อมต่อ' : 'กำลังตรวจสอบ'}
+              </span>
+              <span className="text-slate-500 text-[10px]">
+                ตรวจสอบล่าสุด {systemStatus.data ? fmtTime(systemStatus.data.server_time) : '-'}
+              </span>
             </div>
           </div>
 
@@ -387,17 +456,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-full bg-slate-700 ring-2 ring-blue-500/40 flex items-center justify-center text-white font-bold text-xs overflow-hidden">
-                <img
-                  src="/image 9.png"
-                  alt="Nurse Profile"
-                  className="w-full h-full object-cover"
-                />
+                {user.full_name.trim().charAt(0) || '?'}
               </div>
               <div className="flex flex-col text-[12px]">
                 <span className="font-bold text-white leading-tight truncate max-w-[120px]">
-                  ชื่อเจ้าหน้าที่-นามสกุล
+                  {user.full_name}
                 </span>
-                <span className="text-slate-400 text-[11px]">NICU Nurse</span>
+                <span className="text-slate-400 text-[11px] truncate max-w-[120px]">{user.position}</span>
               </div>
             </div>
             {onLogout ? (
@@ -423,32 +488,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       {/* ========================================================================= */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto no-scrollbar">
         {/* TOP BAR / HEADER */}
-        <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 sticky top-0 z-30 shadow-xs">
-          {/* Breadcrumb Location */}
-          <div className="flex items-center gap-2 text-[14px]">
-            <span className="font-semibold text-slate-900">โรงพยาบาลกรุงเทพ</span>
-            <span className="text-slate-400">/</span>
-            <span className="text-slate-600 font-medium">แผนกเด็ก (กุมารเวชกรรม)</span>
+        <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0 sticky top-0 z-30 shadow-xs">
+          {/* Menu button (small screens) + Breadcrumb Location */}
+          <div className="flex items-center gap-2 text-[14px] min-w-0">
+            <button
+              title="เมนู"
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 -ml-1 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer shrink-0"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="font-semibold text-slate-900 truncate hidden sm:inline">โรงพยาบาลกรุงเทพ</span>
+            <span className="text-slate-400 hidden md:inline">/</span>
+            <span className="text-slate-600 font-medium hidden md:inline">แผนกเด็ก (กุมารเวชกรรม)</span>
           </div>
 
           {/* Header Action Tools */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             {/* Search Input */}
-            <div className="relative">
+            <div className="relative min-w-0">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="ค้นหาผู้ป่วย"
-                className="pl-9 pr-4 py-1.5 w-60 rounded-lg border border-slate-200 text-[13px] bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
+                className="pl-9 pr-3 py-1.5 w-full max-w-[9rem] sm:max-w-none sm:w-60 rounded-lg border border-slate-200 text-[13px] bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
               />
             </div>
 
             {/* Utility Buttons */}
             <button
               title="เลือกวันที่"
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+              className="hidden sm:inline-flex p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
             >
               <Calendar className="w-4 h-4" />
             </button>
@@ -464,7 +536,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             </button>
             <button
               title="การแจ้งเตือน"
-              onClick={() => setNotificationCount(0)}
+              onClick={() => setActiveNav('alerts')}
               className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 relative transition-colors"
             >
               <Bell className="w-4 h-4" />
@@ -478,7 +550,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         </header>
 
         {/* MAIN BODY SCROLL AREA */}
-        <div className="p-6 pb-14 space-y-6 max-w-[1600px] w-full mx-auto">
+        <div className="p-3 sm:p-6 pb-14 space-y-6 max-w-[1600px] w-full mx-auto">
           {activeNav === 'guide' ? (
             <div className="space-y-6">
               {/* Back link & Title section */}
@@ -698,7 +770,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             </div>
           ) : activeNav === 'start_monitoring' ? (
             <StartIvMonitoring
-              patientData={selectedNeedlePatient}
+              key={`${selectedNeedlePatient?.patientId}-${selectedNeedlePatient?.roundId ?? 'new'}`}
+              patientData={selectedNeedlePatient ?? undefined}
               onBack={() => setActiveNav('patient_detail')}
               onCancel={() => setActiveNav('patient_detail')}
               onContinue={() => setActiveNav('patient_detail')}
@@ -706,18 +779,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             />
           ) : activeNav === 'patient_detail' || activeNav === 'single_patient' ? (
             <SinglePatientDetail
-              patientName={selectedNeedlePatient?.name}
-              hnAn={selectedNeedlePatient?.hn}
-              onBack={() => setActiveNav('rounds')}
+              patientId={selectedNeedlePatient?.patientId}
+              onBack={() => setActiveNav(patientReturnNav)}
               onViewGradeHistory={() => setActiveNav('history')}
               onViewTrackingHistory={() => setActiveNav('rounds')}
-              onInspectNeedleNow={() => setActiveNav('start_monitoring')}
+              onInspectNeedleNow={handleInspectNeedle}
               onViewSummaryReport={() => setActiveNav('reports')}
               onViewInfiltrationDetail={() => setActiveNav('infiltration')}
               onViewPhlebitisDetail={() => setActiveNav('phlebitis')}
             />
           ) : activeNav === 'rounds' ? (
-            <RoundsInspection onInspectNeedle={handleInspectNeedle} />
+            <RoundsInspection onInspectNeedle={handleInspectNeedle} onOpenPatient={openPatient} />
           ) : activeNav === 'patients' ? (
             <PediatricPatients
               onAddFirstIvSite={(patient) => {
@@ -725,14 +797,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 setActiveNav('start_monitoring');
               }}
               onInspectNeedle={handleInspectNeedle}
+              onOpenPatient={openPatient}
               onNavigate={(nav) => setActiveNav(nav)}
+              tab={patientsTab}
+              onTabChange={setPatientsTab}
             />
           ) : activeNav === 'ai_review' ? (
             <AiReviewPending onNavigate={(nav: string) => setActiveNav(nav)} />
           ) : activeNav === 'completed' ? (
             <CompletedTracking />
           ) : activeNav === 'alerts' ? (
-            <NotificationCenter onMarkAllAsRead={() => setNotificationCount(0)} />
+            <NotificationCenter onMarkAllAsRead={refreshUnread} onNavigate={(nav) => setActiveNav(nav)} />
           ) : activeNav === 'infiltration' ? (
             <InfiltrationTracking
               onNavigate={(nav) => setActiveNav(nav)}
@@ -753,10 +828,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             <UserManagement onNavigate={(nav: string) => setActiveNav(nav)} />
           ) : activeNav === 'audit' ? (
             <AuditLog onNavigate={(nav: string) => setActiveNav(nav)} />
+          ) : activeNav === 'models' ? (
+            <ModelManagement onNavigate={(nav: string) => setActiveNav(nav)} />
           ) : activeNav === 'settings' ? (
             <SystemSettings onNavigate={(nav: string) => setActiveNav(nav)} />
           ) : (
             <DashboardOverview
+              overview={overview.data}
+              notifications={overviewNotifications}
+              onSelectPatient={(id) => {
+                const row = rows.find((r) => String(r.id) === id);
+                if (row) openPatient(selectRow(row));
+              }}
               onNavigate={(nav: string) => setActiveNav(nav)}
               handleRefresh={handleRefresh}
               isRefreshing={isRefreshing}

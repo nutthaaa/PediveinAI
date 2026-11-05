@@ -1,7 +1,13 @@
 import React, { useState, useRef } from 'react';
 import { SinglePatientDetail } from './SinglePatientDetail';
 import { CreateTrackingGroupModal } from './CreateTrackingGroupModal';
-import { AiAnalysisResultView } from './AiAnalysisResultView';
+import { RegisterPatientModal } from './RegisterPatientModal';
+import { api } from '../api/client';
+import { useAuth } from '../api/auth';
+import { useApi } from '../api/useApi';
+import { fmtTime, pct } from '../api/format';
+import { hnAn, selectPatient, type SiteSelection } from '../api/selection';
+import type { Patient } from '../api/types';
 import { StartIvMonitoring } from './StartIvMonitoring';
 import {
   Search,
@@ -22,30 +28,34 @@ const PhlebitisIcon: React.FC<{ className?: string }> = ({ className = "w-3.5 h-
 );
 
 interface PediatricPatientsProps {
-  onAddFirstIvSite?: (patient: any) => void;
-  onInspectNeedle?: (patient: any) => void;
+  onAddFirstIvSite?: (patient: SiteSelection) => void;
+  onInspectNeedle?: (patient: SiteSelection) => void;
+  onOpenPatient?: (patient: SiteSelection) => void;
   onNavigate?: (nav: string) => void;
+  /** Kept by the parent so returning from a patient reopens the same tab. */
+  tab?: 'all' | 'my_patients';
+  onTabChange?: (tab: 'all' | 'my_patients') => void;
 }
 
 export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
   onAddFirstIvSite,
   onInspectNeedle,
-  onNavigate
+  onOpenPatient,
+  tab,
+  onTabChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'all' | 'my_patients'>('all');
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [localTab, setLocalTab] = useState<'all' | 'my_patients'>(tab ?? 'all');
+  const activeTab = tab ?? localTab;
+  const setActiveTab = (next: 'all' | 'my_patients') => {
+    setLocalTab(next);
+    onTabChange?.(next);
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
   const [startMonitoringPatient, setStartMonitoringPatient] = useState<any | null>(null);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
-  const [showAiResultView, setShowAiResultView] = useState(false);
-  const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({
-    '1': true,
-    '2': true,
-    '3': true,
-    '4': false,
-    '5': false,
-    '6': false
-  });
+  const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
 
   // Drag-to-scroll states and handlers
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -84,122 +94,64 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
     setSelectedRows((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const patientRows = [
-    {
-      id: '1',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      room: 'PICU ห้อง 901',
-      bed: 'เตียง 901',
-      progress: '0 / 168 ชม.',
-      roundText: 'รอบ 0',
-      ivSiteText: 'ยังไม่มี IV Site',
-      infStatus: 'none',
-      phleStatus: 'none',
-      caregiver: 'ไม่มีผู้รับผิดชอบ',
-      caregiverRole: '',
-      confidence: 'รอตรวจสอบ',
-      confidenceTime: '',
-      actionType: 'add_first',
-      actionText: '+ เพิ่ม IV Site แรก'
-    },
-    {
-      id: '2',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      room: 'PICU ห้อง 902',
-      bed: 'เตียง 902',
-      progress: '98 / 168 ชม.',
-      roundText: 'รอบ 49 · ทุก 2 ชม.',
-      ivSiteText: 'IV Site 2 ตำแหน่ง',
-      infStatus: 'normal',
-      phleStatus: 'review_red',
-      caregiver: 'ชื่อเจ้า-นามสกุล A',
-      caregiverRole: 'NICU Nurse',
-      confidence: '91%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      actionType: 'view',
-      actionText: 'ดู 2 IV Site'
-    },
-    {
-      id: '3',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      room: 'PICU ห้อง 903',
-      bed: 'เตียง 903',
-      progress: '30 / 168 ชม.',
-      roundText: 'รอบ 15 · ทุก 2 ชม.',
-      ivSiteText: 'IV Site 1 ตำแหน่ง',
-      infStatus: 'review_blue',
-      phleStatus: 'normal',
-      caregiver: 'ชื่อเจ้า-นามสกุล A',
-      caregiverRole: 'NICU Nurse',
-      confidence: '96%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      actionType: 'view',
-      actionText: 'ดู 1 IV Site'
-    },
-    {
-      id: '4',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      room: 'PICU ห้อง 904',
-      bed: 'เตียง 904',
-      progress: '14 / 168 ชม.',
-      roundText: 'รอบ 7 · ทุก 2 ชม.',
-      ivSiteText: 'IV Site 1 ตำแหน่ง',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      caregiver: 'ชื่อเจ้า-นามสกุล B',
-      caregiverRole: 'NICU Nurse',
-      confidence: '98%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      actionType: 'view',
-      actionText: 'ดู 1 IV Site'
-    },
-    {
-      id: '5',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      room: 'PICU ห้อง 905',
-      bed: 'เตียง 905',
-      progress: '14 / 168 ชม.',
-      roundText: 'รอบ 7 · ทุก 2 ชม.',
-      ivSiteText: 'IV Site 1 ตำแหน่ง',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      caregiver: 'ชื่อเจ้า-นามสกุล B',
-      caregiverRole: 'NICU Nurse',
-      confidence: '98%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      actionType: 'view',
-      actionText: 'ดู 1 IV Site'
-    },
-    {
-      id: '6',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      room: 'PICU ห้อง 906',
-      bed: 'เตียง 906',
-      progress: '14 / 168 ชม.',
-      roundText: 'รอบ 7 · ทุก 2 ชม.',
-      ivSiteText: 'IV Site 1 ตำแหน่ง',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      caregiver: 'ชื่อเจ้า-นามสกุล A',
-      caregiverRole: 'NICU Nurse',
-      confidence: '98%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      actionType: 'view',
-      actionText: 'ดู 1 IV Site'
-    }
-  ];
+  const patients = useApi(() => api.get<Patient[]>('/api/patients?status=all'), []);
+  const { user } = useAuth();
+
+  const aiStatus = (patient: Patient, condition: 'infiltration' | 'phlebitis') => {
+    const latest = patient.sites
+      .map((site) => site.latest_analysis)
+      .filter((a) => a?.prediction_issued)
+      .sort((a, b) => (a!.created_at < b!.created_at ? 1 : -1))[0];
+    if (!latest) return patient.sites.some((s) => s.status === 'active') ? 'normal' : 'none';
+    const view = latest.conditions[condition];
+    if (view.review) return view.review.finding === 'observation_found' ? (condition === 'infiltration' ? 'review_blue' : 'review_red') : 'normal';
+    return view.flagged ? (condition === 'infiltration' ? 'review_blue' : 'review_red') : 'normal';
+  };
+
+  const patientRows = (patients.data ?? []).map((patient) => {
+    const active = patient.sites.filter((s) => s.status === 'active');
+    const primary = active[0] ?? patient.sites[patient.sites.length - 1];
+    const latest = patient.sites
+      .map((s) => s.latest_analysis)
+      .filter((a) => a?.prediction_issued)
+      .sort((a, b) => (a!.created_at < b!.created_at ? 1 : -1))[0];
+    return {
+      id: String(patient.id),
+      source: patient,
+      name: patient.full_name,
+      hnAn: hnAn(patient),
+      hisConfirmed: false,
+      room: `${patient.ward}${patient.room ? ` ${patient.room}` : ''}`,
+      bed: patient.bed ?? '-',
+      progress: primary ? `${Math.floor(primary.elapsed_hours)} / ${primary.duration_hours} ชม.` : '-',
+      roundText: primary?.next_round
+        ? `รอบ ${primary.next_round.round_no} · ทุก ${primary.interval_hours} ชม.`
+        : patient.status === 'discharged' ? 'สิ้นสุดการติดตาม' : 'รอบ 0',
+      ivSiteText: patient.sites.length === 0 ? 'ยังไม่มี IV Site' : `IV Site ${active.length} ตำแหน่ง (ทั้งหมด ${patient.sites.length})`,
+      infStatus: aiStatus(patient, 'infiltration'),
+      phleStatus: aiStatus(patient, 'phlebitis'),
+      caregiver: patient.attending_nurse?.full_name ?? 'ไม่มีผู้รับผิดชอบ',
+      caregiverRole: patient.attending_nurse?.position ?? '',
+      confidence: latest ? pct(latest.confidence) : 'รอตรวจสอบ',
+      confidenceTime: latest ? `วิเคราะห์เวลา ${fmtTime(latest.created_at)}` : '',
+      actionType: patient.sites.length === 0 && patient.status === 'admitted' ? 'add_first' : 'view',
+      actionText: patient.sites.length === 0 && patient.status === 'admitted' ? '+ เพิ่ม IV Site แรก' : `ดู ${patient.sites.length} IV Site`
+    };
+  });
+
+  const myRows = patientRows.filter((r) => r.source.attending_nurse?.id === user.id);
+  const counts = {
+    notStarted: patientRows.filter((r) => r.source.status === 'admitted' && r.source.active_sites === 0).length,
+    tracking: patientRows.filter((r) => r.source.active_sites > 0).length,
+    ended: patientRows.filter((r) => r.source.status === 'discharged').length
+  };
+
+  const assignSelectedToMe = async () => {
+    const ids = patientRows.filter((p) => selectedRows[p.id]).map((p) => p.source.id);
+    await Promise.all(ids.map((id) => api.patch(`/api/patients/${id}`, { attending_nurse_id: user.id })));
+    setSelectedRows({});
+    await patients.reload();
+  };
 
   const filteredRows = patientRows.filter(
     (r) =>
@@ -209,16 +161,15 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
       r.bed.includes(searchQuery)
   );
 
+  const openRow = (row: (typeof patientRows)[number]) => {
+    if (onOpenPatient) onOpenPatient(selectPatient(row.source));
+    else setSelectedPatient(row);
+  };
+
   if (startMonitoringPatient) {
     return (
       <StartIvMonitoring
-        patientData={{
-          name: startMonitoringPatient.name || 'ชื่อ-นามสกุล-คนไข้',
-          hnAn: startMonitoringPatient.hnAn || 'HN34567890 · AN26080918',
-          ward: 'PICU',
-          room: startMonitoringPatient.room || 'ห้อง A-01',
-          bed: startMonitoringPatient.bed || 'เตียง C32'
-        }}
+        patientData={selectPatient(startMonitoringPatient.source)}
         onBack={() => setStartMonitoringPatient(null)}
         onCancel={() => setStartMonitoringPatient(null)}
         onContinue={() => {
@@ -230,20 +181,15 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
     );
   }
 
-  if (showAiResultView) {
-    return (
-      <AiAnalysisResultView
-        onBack={() => setShowAiResultView(false)}
-      />
-    );
-  }
-
   if (selectedPatient) {
     return (
       <SinglePatientDetail
-        patientName={selectedPatient.name || 'ชื่อ-นามสกุลคนไข้'}
-        hnAn={selectedPatient.hnAn || 'HN34567890 · AN26080918'}
-        onBack={() => setSelectedPatient(null)}
+        patientId={selectedPatient.source.id}
+        onBack={() => {
+          setSelectedPatient(null);
+          patients.reload();
+        }}
+        onInspectNeedleNow={onInspectNeedle}
         onViewSummaryReport={() => setSelectedPatient(null)}
         onAddNewIvSite={() => {
           const patient = selectedPatient;
@@ -262,7 +208,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
           PEDIATRIC PATIENT LIST
         </span>
         <h1 className="text-2xl sm:text-[28px] font-bold text-slate-900 tracking-tight mt-0.5">
-          รายชื่อผู้ป่วยเด็กจาก HIS
+          รายชื่อผู้ป่วยเด็ก
         </h1>
         <p className="text-slate-500 text-[13px] mt-1">
           แสดงเฉพาะผู้ป่วยในแผนกเด็ก และรวม Temporary Patient โดยไม่สร้าง HN ซ้ำ
@@ -277,7 +223,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
             <div className="w-10 h-10 rounded-xl bg-[#F97316] text-white flex items-center justify-center shrink-0 shadow-xs">
               <Calendar className="w-5 h-5" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">1</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{counts.notStarted}</div>
           </div>
           <div className="text-[13px] text-slate-500 font-medium">ยังไม่เริ่ม</div>
         </div>
@@ -288,7 +234,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
             <div className="w-10 h-10 rounded-xl bg-[#0070F3] text-white flex items-center justify-center shrink-0 shadow-xs">
               <Activity className="w-5 h-5" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">4</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{counts.tracking}</div>
           </div>
           <div className="text-[13px] text-slate-500 font-medium">อยู่ระหว่างติดตาม</div>
         </div>
@@ -299,7 +245,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
             <div className="w-10 h-10 rounded-xl bg-[#10B981] text-white flex items-center justify-center shrink-0 shadow-xs">
               <FileText className="w-5 h-5" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">1</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{counts.ended}</div>
           </div>
           <div className="text-[13px] text-slate-500 font-medium">สิ้นสุดการติดตาม</div>
         </div>
@@ -314,7 +260,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
               : 'text-slate-500 font-medium hover:text-slate-800'
             }`}
         >
-          รายการผู้ป่วยเด็กทั้งหมด (26)
+          รายการผู้ป่วยเด็กทั้งหมด ({patientRows.length})
         </button>
         <button
           onClick={() => setActiveTab('my_patients')}
@@ -323,7 +269,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
               : 'text-slate-500 font-medium hover:text-slate-800'
             }`}
         >
-          ผู้ป่วยเด็กที่ฉันดูแล (3)
+          ผู้ป่วยเด็กที่ฉันดูแล ({myRows.length})
         </button>
       </div>
 
@@ -342,8 +288,16 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
         </div>
 
         {/* Action Button (Visible on All Patients tab) */}
+        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setIsRegisterOpen(true)}
+          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-[14px] px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-2xs cursor-pointer"
+        >
+          <span>+ ลงทะเบียนผู้ป่วย</span>
+        </button>
         {activeTab === 'all' && (
           <button
+            disabled={!Object.values(selectedRows).some(Boolean)}
             onClick={() => setIsGroupModalOpen(true)}
             className="bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[14px] px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-xs cursor-pointer transition-all active:scale-95 shrink-0"
           >
@@ -351,6 +305,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
             <span>สร้างกลุ่มผู้ป่วยติดตาม</span>
           </button>
         )}
+        </div>
       </div>
 
       {/* Main Patients Data Table Card */}
@@ -382,9 +337,9 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100 text-[14px]">
               {(activeTab === 'my_patients'
-                ? patientRows.slice(0, 3)
+                ? myRows
                 : filteredRows
-              ).map((row: any) => (
+              ).map((row) => (
                 <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
                   {/* Custom Checkbox (Only on All Patients tab) */}
                   {activeTab === 'all' && (
@@ -401,7 +356,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
                   {/* Patient Info */}
                   <td className="py-4 px-4">
                     <button
-                      onClick={() => !draggedFar && setSelectedPatient(row)}
+                      onClick={() => !draggedFar && openRow(row)}
                       className="text-left font-bold text-slate-900 hover:text-[#1E58E6] hover:underline cursor-pointer"
                     >
                       {row.name}
@@ -463,7 +418,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
                     )}
                     {row.infStatus === 'review_blue' && (
                       <button
-                        onClick={() => !draggedFar && setSelectedPatient(row)}
+                        onClick={() => !draggedFar && openRow(row)}
                         className="bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] hover:bg-[#DBEAFE] px-3.5 py-1.5 rounded-full text-[12px] font-bold inline-flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
                       >
                         <Sparkles className="w-3.5 h-3.5 text-[#2563EB] stroke-[2]" />
@@ -483,7 +438,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
                     )}
                     {row.phleStatus === 'review_red' && (
                       <button
-                        onClick={() => !draggedFar && setSelectedPatient(row)}
+                        onClick={() => !draggedFar && openRow(row)}
                         className="bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5] hover:bg-[#FEE2E2] px-3.5 py-1.5 rounded-full text-[12px] font-bold inline-flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
                       >
                         <PhlebitisIcon className="w-3.5 h-3.5 text-[#DC2626]" />
@@ -529,7 +484,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
                         onClick={() => {
                           if (!draggedFar) {
                             if (onAddFirstIvSite) {
-                              onAddFirstIvSite(row);
+                              onAddFirstIvSite(selectPatient(row.source));
                             } else {
                               setStartMonitoringPatient(row);
                             }
@@ -541,7 +496,7 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
                       </button>
                     ) : (
                       <button
-                        onClick={() => !draggedFar && setSelectedPatient(row)}
+                        onClick={() => !draggedFar && openRow(row)}
                         className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium text-[13px] px-3.5 py-1.5 rounded-lg transition-all shadow-2xs cursor-pointer"
                       >
                         {row.actionText}
@@ -556,18 +511,8 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
 
         {/* Table Pagination Footer */}
         <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <div>Showing 10 of 10 Historical Log</div>
-          <div className="flex items-center gap-1.5">
-            <button className="px-3.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-slate-600 cursor-pointer shadow-2xs">
-              Previous
-            </button>
-            <button className="w-8 h-8 bg-[#1E58E6] text-white font-bold rounded-lg flex items-center justify-center shadow-2xs cursor-pointer">
-              1
-            </button>
-            <button className="w-8 h-8 border border-slate-200 text-slate-600 font-medium rounded-lg flex items-center justify-center bg-white hover:bg-slate-50 shadow-2xs cursor-pointer">
-              2
-            </button>
-
+          <div>
+            {patients.loading ? 'กำลังโหลด...' : patients.error ? <span className="text-red-600">{patients.error}</span> : `ทั้งหมด ${filteredRows.length} รายการ`}
           </div>
         </div>
       </div>
@@ -598,15 +543,24 @@ export const PediatricPatients: React.FC<PediatricPatientsProps> = ({
         </div>
       </div>
 
+      {isRegisterOpen && (
+        <RegisterPatientModal
+          onClose={() => setIsRegisterOpen(false)}
+          onCreated={() => {
+            setIsRegisterOpen(false);
+            patients.reload();
+          }}
+        />
+      )}
+
       {/* Modal Confirmation Popup */}
       {isGroupModalOpen && (
         <CreateTrackingGroupModal
           selectedPatients={patientRows.filter((p) => selectedRows[p.id])}
+          onConfirmSuccess={assignSelectedToMe}
           onClose={(action) => {
             setIsGroupModalOpen(false);
-            if (action === 'show_ai_result') {
-              setShowAiResultView(true);
-            } else if (action === 'confirm_created_group') {
+            if (action === 'confirm_created_group') {
               setActiveTab('my_patients');
             }
           }}

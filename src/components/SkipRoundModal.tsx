@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { api, ApiError } from '../api/client';
+import { useAuth } from '../api/auth';
+import { fmtDateTime } from '../api/format';
+import type { SystemSettings } from '../api/types';
 import { X, Flag, CheckCircle2, ChevronDown } from 'lucide-react';
 
 interface SkipRoundModalProps {
+  roundId?: number;
   patientName?: string;
   hnAn?: string;
   ward?: string;
@@ -13,36 +18,57 @@ interface SkipRoundModalProps {
 }
 
 export const SkipRoundModal: React.FC<SkipRoundModalProps> = ({
-  patientName = 'ชื่อ-นามสกุล-คนไข้',
-  ward = 'PICU',
-  room = 'ห้อง A-01',
-  bed = 'เตียง C32',
-  dueTime = '12:00 น.',
+  roundId,
+  patientName = '-',
+  ward = '-',
+  room = '-',
+  bed = '-',
+  dueTime = '-',
   onClose,
   onConfirmSuccess
 }) => {
+  const { user } = useAuth();
+  const [recordedAt] = useState(() => new Date().toISOString());
   const [reason, setReason] = useState<string>('');
   const [customReason, setCustomReason] = useState<string>('');
   const [isOpenDropdown, setIsOpenDropdown] = useState<boolean>(false);
   const [isChecked, setIsChecked] = useState<boolean>(false);
   const [isToastShown, setIsToastShown] = useState<boolean>(false);
 
-  const options = [
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [options, setOptions] = useState<string[]>([
     'ผู้ป่วยหลับ',
     'ผู้ป่วยร้องไห้ งอแง ไม่ให้ความร่วมมือ',
     'ผู้ปกครองปฏิเสธ',
     'อื่นๆ'
-  ];
+  ]);
+
+  useEffect(() => {
+    api
+      .get<SystemSettings>('/api/settings')
+      .then((settings) => setOptions([...settings.skip_reasons, 'อื่นๆ']))
+      .catch(() => undefined);
+  }, []);
 
   const displayReason = reason === 'อื่นๆ' ? (customReason || 'อื่นๆ') : reason;
 
-  const handleConfirm = () => {
-    if (!isChecked) return;
-    setIsToastShown(true);
-    setTimeout(() => {
-      if (onConfirmSuccess) onConfirmSuccess();
-      onClose();
-    }, 1000);
+  const handleConfirm = async () => {
+    if (!isChecked || !displayReason || isSaving) return;
+    setError(null);
+    setIsSaving(true);
+    try {
+      if (roundId) await api.post(`/api/rounds/${roundId}/skip`, { reason: displayReason });
+      setIsToastShown(true);
+      setTimeout(() => {
+        if (onConfirmSuccess) onConfirmSuccess();
+        onClose();
+      }, 1000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'บันทึกการข้ามรอบไม่สำเร็จ');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -151,14 +177,14 @@ export const SkipRoundModal: React.FC<SkipRoundModalProps> = ({
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500 font-normal">เวลาที่บันทึกการข้ามรอบ</span>
-            <span className="font-bold text-slate-900">10 ส.ค. 2569 · 12:05 น.</span>
+            <span className="font-bold text-slate-900">{fmtDateTime(recordedAt)}</span>
           </div>
 
           <div className="border-t border-slate-100" />
 
           <div className="flex items-center justify-between">
             <span className="text-slate-500 font-normal">ผู้ดำเนินการ</span>
-            <span className="font-bold text-slate-900">ชื่อ-นามสกุล-ผู้ดำเนินการ</span>
+            <span className="font-bold text-slate-900">{user.full_name}</span>
           </div>
 
           <div className="border-t border-slate-100" />
@@ -201,6 +227,10 @@ export const SkipRoundModal: React.FC<SkipRoundModalProps> = ({
           รอบนี้จะไม่นับเป็นรอบตรวจที่ดำเนินการแล้ว ระยะติดตาม 168 ชั่วโมงจะไม่เริ่มนับใหม่ และกำหนดรอบถัดไปคงเดิม
         </div>
 
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{error}</div>
+        )}
+
         {/* Footer Buttons */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
@@ -212,9 +242,9 @@ export const SkipRoundModal: React.FC<SkipRoundModalProps> = ({
 
           <button
             onClick={handleConfirm}
-            disabled={!isChecked}
+            disabled={!isChecked || !displayReason || isSaving}
             className={`px-5 py-2.5 rounded-xl font-bold text-[14px] flex items-center gap-2 transition-all ${
-              isChecked
+              isChecked && displayReason && !isSaving
                 ? 'bg-[#1E58E6] hover:bg-blue-700 text-white shadow-xs cursor-pointer active:scale-95'
                 : 'bg-slate-100 text-slate-400 border border-slate-200/80 cursor-not-allowed'
             }`}

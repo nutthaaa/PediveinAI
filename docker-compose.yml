@@ -1,0 +1,105 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pedivein
+      POSTGRES_USER: pedivein
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pedivein}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pedivein -d pedivein"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PEDIVEIN_DATABASE_URL: postgresql+psycopg://pedivein:${POSTGRES_PASSWORD:-pedivein}@db:5432/pedivein
+      PEDIVEIN_JWT_SECRET: ${PEDIVEIN_JWT_SECRET:-dev-only-change-me}
+      # AI runs on the host by default (needs ~8-16 GB RAM); use the "ai" profile on a Linux server.
+      PEDIVEIN_AI_BASE_URL: ${PEDIVEIN_AI_BASE_URL:-http://host.docker.internal:8000}
+      PEDIVEIN_AI_API_KEY: ${PEDIVEIN_AI_API_KEY:-}
+      PEDIVEIN_SEED_DEMO_DATA: ${PEDIVEIN_SEED_DEMO_DATA:-true}
+      PEDIVEIN_DEMO_PASSWORD: ${PEDIVEIN_DEMO_PASSWORD:-pedivein1234}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-8001}:8001"
+    volumes:
+      # Patient images. Shared with a backend run outside Docker; use an encrypted volume in production.
+      - ./backend/uploads:/data/uploads
+
+  # Database admin UI: http://localhost:5050 (the "PediVein" server is pre-registered; DB password = POSTGRES_PASSWORD).
+  pgadmin:
+    image: dpage/pgadmin4:8.14
+    depends_on:
+      - db
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@pedivein.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-pedivein}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      # Patient data: keep it on localhost only.
+      - "127.0.0.1:${PGADMIN_HOST_PORT:-5050}:80"
+
+  frontend:
+    build: .
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-5173}:80"
+
+  ai:
+    profiles: ["ai"]
+    build: ./backend_ai_cpu
+    environment:
+      PEDIVEIN_API_HOST: 0.0.0.0
+      PEDIVEIN_API_PORT: "8000"
+      PEDIVEIN_API_KEY: ${PEDIVEIN_AI_API_KEY:-}
+    volumes: &ai_volumes
+      # Retrained model versions, training logs and the active-version pointer.
+      - ai_models:/data/models
+      # Patient photos (read-only) for retraining from clinician-confirmed reviews.
+      - ./backend/uploads:/data/uploads:ro
+    ports:
+      - "127.0.0.1:${AI_HOST_PORT:-8000}:8000"
+
+  # Same AI service on an NVIDIA GPU. Use instead of "ai" (not together): docker compose --profile ai-gpu up -d
+  ai-gpu:
+    profiles: ["ai-gpu"]
+    build:
+      context: ./backend_ai_cpu
+      args:
+        TORCH_INDEX_URL: ""
+    environment:
+      PEDIVEIN_API_HOST: 0.0.0.0
+      PEDIVEIN_API_PORT: "8000"
+      PEDIVEIN_API_KEY: ${PEDIVEIN_AI_API_KEY:-}
+    networks:
+      default:
+        # Backend reaches it at http://ai:8000, same as the CPU service.
+        aliases: [ai]
+    volumes: *ai_volumes
+    ports:
+      - "127.0.0.1:${AI_HOST_PORT:-8000}:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  pgdata:
+  ai_models:
+  pgadmin_data:

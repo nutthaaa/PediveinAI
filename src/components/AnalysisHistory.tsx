@@ -1,5 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { Search, ChevronDown, X, AlertTriangle, Droplets, Activity, CheckCircle2 } from 'lucide-react';
+import { Search, ChevronDown, X, Droplets, CheckCircle2, Trash2 } from 'lucide-react';
+import { api } from '../api/client';
+import { useAuth } from '../api/auth';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { useApi } from '../api/useApi';
+import { fmtDateTime, pct } from '../api/format';
+import type { HistoryItem } from '../api/types';
 
 const PhlebitisIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -21,6 +27,8 @@ const HisCheckIcon = () => (
   </svg>
 );
 
+const RISK_COLORS = ['#10B981', '#10B981', '#F59E0B', '#EA580C', '#B91C1C'];
+
 interface HistoricalLogItem {
   id: string;
   patientName: string;
@@ -37,7 +45,8 @@ interface HistoricalLogItem {
   reviewer: string;
   timestamp: string;
   continuousStatus: string;
-  riskLevel?: 'ต่ำ' | 'ปานกลาง' | 'สูง' | 'วิกฤต';
+  riskLevel?: string;
+  source: HistoryItem;
 }
 
 interface AnalysisHistoryProps {
@@ -48,6 +57,8 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedPatient, setSelectedPatient] = useState<HistoricalLogItem | null>(null);
+  const [deleting, setDeleting] = useState<HistoricalLogItem | null>(null);
+  const { user } = useAuth();
 
   // Drag-to-scroll handlers
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -82,110 +93,27 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
     tableContainerRef.current.scrollLeft = scrollLeftState - walk;
   };
 
-  const historyLogs: HistoricalLogItem[] = [
-    {
-      id: '1',
-      patientName: 'ชื่อ-นามสกุลคนไข้ A1',
-      hn: 'HN34567890',
-      an: 'AN26080918',
-      ward: 'PICU',
-      bed: 'เตียง A02',
-      type: 'phlebitis',
-      grade: 'Grade 4',
-      aiConfidence: 'ความเชื่อมั่น AI 91%',
-      site: 'หลังมือซ้าย',
-      vein: 'Cephalic vein',
-      needle: 'เข็ม #1',
-      reviewer: 'เจ้าหน้าที่ ชื่อ-นามสกุล',
-      timestamp: '25 ส.ค. 2569 18:45',
-      continuousStatus: 'ยืนยันไม่พบข้อสังเกต'
-    },
-    {
-      id: '2',
-      patientName: 'ชื่อ-นามสกุลคนไข้ A1',
-      hn: 'HN34567890',
-      an: 'AN26080918',
-      ward: 'PICU',
-      bed: 'เตียง A02',
-      type: 'infiltration',
-      grade: 'Grade 0',
-      aiConfidence: 'ความเชื่อมั่น AI 96%',
-      site: 'หลังมือขวา',
-      vein: 'Cephalic vein',
-      needle: 'เข็ม #1',
-      reviewer: 'เจ้าหน้าที่ ชื่อ-นามสกุล',
-      timestamp: '25 ส.ค. 2569 18:45',
-      continuousStatus: 'ยืนยันไม่พบข้อสังเกต'
-    },
-    {
-      id: '3',
-      patientName: 'เด็กชายสมชาย ใจดี',
-      hn: 'HN56789012',
-      an: 'AN26080919',
-      ward: 'PICU',
-      bed: 'เตียง B04',
-      type: 'phlebitis',
-      grade: 'Grade 3',
-      aiConfidence: 'ความเชื่อมั่น AI 94.8%',
-      site: 'ท่อนแขนซ้าย',
-      vein: 'Median cubital vein',
-      needle: 'เข็ม #1',
-      reviewer: 'พว. สมศรี รักษ์ดี',
-      timestamp: '25 ส.ค. 2569 16:30',
-      continuousStatus: 'ยืนยันไม่พบข้อสังเกต'
-    },
-    {
-      id: '4',
-      patientName: 'เด็กหญิงปิยะดา รักษ์ดี',
-      hn: 'HN56789013',
-      an: 'AN26080920',
-      ward: 'PICU',
-      bed: 'เตียง A02',
-      type: 'infiltration',
-      grade: 'Grade 2',
-      aiConfidence: 'ความเชื่อมั่น AI 91.2%',
-      site: 'หลังมือขวา',
-      vein: 'Metacarpal vein',
-      needle: 'เข็ม #2',
-      reviewer: 'พว. นภา วงศ์สว่าง',
-      timestamp: '25 ส.ค. 2569 14:15',
-      continuousStatus: 'ยืนยันไม่พบข้อสังเกต'
-    },
-    {
-      id: '5',
-      patientName: 'เด็กชายกิตติศักดิ์ มั่นคง',
-      hn: 'HN56789014',
-      an: 'AN26080921',
-      ward: 'PICU',
-      bed: 'เตียง C12',
-      type: 'infiltration',
-      grade: 'Grade 0',
-      aiConfidence: 'ความเชื่อมั่น AI 98.7%',
-      site: 'หลังมือขวา',
-      vein: 'Cephalic vein',
-      needle: 'เข็ม #1',
-      reviewer: 'พว. อารีรัตน์ มั่นใจ',
-      timestamp: '25 ส.ค. 2569 12:00',
-      continuousStatus: 'ยืนยันไม่พบข้อสังเกต'
-    },
-    {
-      id: '6',
-      patientName: 'เด็กหญิงนภา วงศ์สว่าง',
-      hn: 'HN56789015',
-      an: 'AN26080922',
-      ward: 'PICU',
-      bed: 'เตียง B12',
-      type: 'phlebitis',
-      grade: 'Grade 1',
-      aiConfidence: 'ความเชื่อมั่น AI 89.4%',
-      site: 'ท่อนแขนขวา',
-      vein: 'Basilic vein',
-      needle: 'เข็ม #1',
-      reviewer: 'พว. นภา วงศ์สว่าง',
-      timestamp: '25 ส.ค. 2569 10:00',
-      continuousStatus: 'ยืนยันไม่พบข้อสังเกต'
-    }
-  ];
+  const history = useApi(() => api.get<HistoryItem[]>('/api/history'), []);
+
+  const historyLogs: HistoricalLogItem[] = (history.data ?? []).map((item) => ({
+    id: String(item.id),
+    source: item,
+    patientName: item.patient.full_name,
+    hn: item.patient.hn,
+    an: item.patient.an ?? '-',
+    ward: item.patient.ward,
+    bed: item.patient.bed ?? '-',
+    type: item.condition,
+    grade: `Grade ${item.grade}`,
+    aiConfidence: `ความเชื่อมั่น AI ${pct(item.ai_probability)}`,
+    site: item.site.location,
+    vein: item.site.vein,
+    needle: item.site.label,
+    reviewer: item.reviewer?.full_name ?? '-',
+    timestamp: fmtDateTime(item.reviewed_at),
+    continuousStatus: item.finding === 'observation_found' ? 'ยืนยันพบข้อสังเกต' : 'ยืนยันไม่พบข้อสังเกต',
+    riskLevel: item.risk_level
+  }));
 
   // Filtering Logic
   const filteredLogs = historyLogs.filter((log) => {
@@ -456,18 +384,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
         {/* Pagination Footer */}
         <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-[13px]">
           <div className="text-slate-400 font-normal">
-            Showing 10 of 10 Historical Log
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button className="px-3.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-slate-600 cursor-pointer shadow-2xs text-[12px]">
-              Previous
-            </button>
-            <button className="w-8 h-8 bg-[#1E58E6] text-white font-bold rounded-lg flex items-center justify-center shadow-2xs cursor-pointer text-[12px]">
-              1
-            </button>
-            <button className="w-8 h-8 border border-slate-200 text-slate-600 font-medium rounded-lg flex items-center justify-center bg-white hover:bg-slate-50 shadow-2xs cursor-pointer text-[12px]">
-              2
-            </button>
+            {history.loading ? 'กำลังโหลด...' : history.error ? history.error : `ทั้งหมด ${filteredLogs.length} รายการ`}
           </div>
         </div>
       </div>
@@ -488,7 +405,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
                   รายละเอียด {selectedPatient.type === 'phlebitis' ? 'PHLEBITIS' : 'INFILTRATION'}
                 </h3>
                 <p className="text-[13px] text-slate-500 font-medium mt-0.5">
-                  {selectedPatient.patientName} · {selectedPatient.hn} · {selectedPatient.ward} / ห้อง A-01 / {selectedPatient.bed}
+                  {selectedPatient.patientName} · {selectedPatient.hn} · {selectedPatient.ward} / {selectedPatient.source.patient.room ?? '-'} / {selectedPatient.bed}
                 </p>
               </div>
               <button
@@ -515,18 +432,18 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
                       : 'ภาวะสารน้ำรั่วออกนอกหลอดเลือด'}
                   </h4>
                   <p className="text-[12px] text-slate-500 font-normal mt-0.5">
-                    ไม่พบข้อสังเกตจากภาพ และได้รับการยืนยันผลแล้ว
+                    {selectedPatient.continuousStatus} · Grade {selectedPatient.source.grade}
                   </p>
                 </div>
               </div>
 
               <div className="flex flex-col items-start sm:items-end shrink-0">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 border border-red-200/80 rounded-full text-[12px] font-bold">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>รอการทบทวน</span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-full text-[12px] font-bold">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>ยืนยันผลแล้ว</span>
                 </span>
                 <span className="text-[11px] text-slate-400 font-medium mt-1">
-                  ส่งคิวทบทวน 9 ส.ค. 2569 · 08:10 น.
+                  ยืนยันเมื่อ {selectedPatient.timestamp}
                 </span>
               </div>
             </div>
@@ -537,7 +454,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
               <div className="space-y-2">
                 <div className="relative rounded-2xl overflow-hidden border border-slate-200 aspect-[4/3] bg-slate-100 shadow-2xs">
                   <img
-                    src="/iv_baseline.png"
+                    src={selectedPatient.source.site.baseline_image_url ?? '/no-image.svg'}
                     alt="ภาพอ้างอิงเริ่มต้น"
                     className="w-full h-full object-cover"
                   />
@@ -550,7 +467,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
                     ภาพอ้างอิงเริ่มต้น
                   </div>
                   <div className="text-[12px] text-slate-400 font-medium">
-                    9 ส.ค. 2569 · 08:00 น.
+                    {fmtDateTime(selectedPatient.source.site.started_at)}
                   </div>
                 </div>
               </div>
@@ -559,7 +476,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
               <div className="space-y-2">
                 <div className="relative rounded-2xl overflow-hidden border border-slate-200 aspect-[4/3] bg-slate-100 shadow-2xs">
                   <img
-                    src="/iv_latest.png"
+                    src={selectedPatient.source.image_url}
                     alt="ภาพล่าสุด"
                     className="w-full h-full object-cover"
                   />
@@ -572,7 +489,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
                     ภาพล่าสุด
                   </div>
                   <div className="text-[12px] text-slate-400 font-medium">
-                    10 ส.ค. 2569 · 12:05 น.
+                    {fmtDateTime(selectedPatient.source.analyzed_at)}
                   </div>
                 </div>
               </div>
@@ -594,8 +511,8 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
               {/* Metric 2 */}
               <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-3.5 space-y-1">
                 <span className="text-slate-400 text-[12px] font-semibold block">ระดับความเสี่ยง</span>
-                <div className="text-xl sm:text-2xl font-extrabold text-emerald-600">
-                  ต่ำ
+                <div className="text-xl sm:text-2xl font-extrabold" style={{ color: RISK_COLORS[selectedPatient.source.grade] }}>
+                  {selectedPatient.riskLevel}
                 </div>
                 <span className="text-slate-400 text-[11px] font-normal block truncate">
                   ข้อมูลจากผลที่ได้รับการยืนยัน
@@ -606,7 +523,7 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
               <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-3.5 space-y-1">
                 <span className="text-slate-400 text-[12px] font-semibold block">ระดับความเชื่อมั่นของ AI</span>
                 <div className="text-xl sm:text-2xl font-extrabold text-[#1E58E6]">
-                  96%
+                  {pct(selectedPatient.source.ai_probability)}
                 </div>
                 <span className="text-slate-400 text-[11px] font-normal block">
                   ค่าความมั่นใจของ AI
@@ -630,8 +547,11 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
 
                 {/* Slider Dot Pin */}
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 border-[#10B981] shadow-md transform -translate-x-1/2"
-                  style={{ left: '12.5%' }}
+                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 shadow-md transform -translate-x-1/2"
+                  style={{
+                    left: `${selectedPatient.source.grade ? (selectedPatient.source.grade - 0.5) * 25 : 12.5}%`,
+                    borderColor: RISK_COLORS[selectedPatient.source.grade]
+                  }}
                 />
               </div>
             </div>
@@ -640,19 +560,31 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
             <div className="bg-slate-50/80 border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[13px]">
               <div>
                 <span className="font-bold text-slate-900 block">
-                  ผู้รับผิดชอบ {selectedPatient.reviewer || 'ชื่อ-นามสกุล-ผู้ตรวจ'}
+                  ผู้รับผิดชอบ {selectedPatient.reviewer}
                 </span>
                 <span className="text-slate-500 font-normal text-[12px]">
-                  เจ้าหน้าที่แผนก - เด็ก
+                  {selectedPatient.source.reviewer?.position ?? '-'}
+                  {selectedPatient.source.note ? ` · หมายเหตุ: ${selectedPatient.source.note}` : ''}
                 </span>
               </div>
               <div className="text-slate-400 font-medium text-[12px]">
-                ตรวจสอบเสร็จตอน 12:05 น.
+                ทบทวนเสร็จ {selectedPatient.timestamp} · AI {selectedPatient.source.ai_flagged ? `คาดการณ์ Grade ${selectedPatient.source.ai_grade}` : 'ไม่พบข้อสังเกต'}
               </div>
             </div>
 
             {/* Footer Close Button */}
-            <div className="pt-2 flex justify-end">
+            <div className="pt-2 flex items-center justify-between gap-3">
+              {user.role === 'admin' ? (
+                <button
+                  onClick={() => setDeleting(selectedPatient)}
+                  className="text-red-600 hover:bg-red-50 font-semibold rounded-xl px-3 py-2 flex items-center gap-1.5 cursor-pointer text-[13px]"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>ลบผลวิเคราะห์นี้</span>
+                </button>
+              ) : (
+                <span />
+              )}
               <button
                 onClick={() => setSelectedPatient(null)}
                 className="px-6 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white font-bold rounded-xl text-[14px] shadow-xs transition-all active:scale-95 cursor-pointer"
@@ -662,6 +594,25 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = () => {
             </div>
           </div>
         </div>
+      )}
+      {deleting && (
+        <ConfirmDeleteModal
+          title="ลบผลวิเคราะห์ AI"
+          details={[
+            { label: 'ผู้ป่วย', value: `${deleting.patientName} · ${deleting.hn}` },
+            { label: 'IV Site', value: `${deleting.needle} · ${deleting.site}` },
+            { label: 'วิเคราะห์เมื่อ', value: fmtDateTime(deleting.source.analyzed_at) },
+            { label: 'สิ่งที่จะถูกลบ', value: 'ภาพ ผล AI และผลทบทวนทั้ง 2 ภาวะของภาพนี้' }
+          ]}
+          endpoint={`/api/analyses/${deleting.source.analysis_id}/delete`}
+          confirmText="ลบ"
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null);
+            setSelectedPatient(null);
+            history.reload();
+          }}
+        />
       )}
     </div>
   );

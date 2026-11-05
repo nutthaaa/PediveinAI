@@ -18,13 +18,19 @@ const PhlebitisIcon: React.FC<{ className?: string }> = ({ className = "w-3.5 h-
 );
 
 import { SkipRoundModal } from './SkipRoundModal';
+import { api } from '../api/client';
+import { useApi, useNow } from '../api/useApi';
+import { countdown, fmtTime, pct, scheduleLabel } from '../api/format';
+import { hnAn, selectRow, type SiteSelection } from '../api/selection';
+import type { BoardRow } from '../api/types';
 
 interface RoundsInspectionProps {
   onBack?: () => void;
-  onInspectNeedle?: (item: any) => void;
+  onInspectNeedle?: (item: SiteSelection) => void;
+  onOpenPatient?: (item: SiteSelection) => void;
 }
 
-export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNeedle }) => {
+export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNeedle, onOpenPatient }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedSkipPatient, setSelectedSkipPatient] = useState<any | null>(null);
@@ -62,162 +68,52 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
     tableContainerRef.current.scrollLeft = scrollLeftState - walk;
   };
 
-  const inspectionRows = [
-    {
-      id: '1',
-      name: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      room: 'PICU',
-      bed: 'เตียง A02',
-      progress: '98 / 168 ชม.',
-      roundText: 'รอบ 49',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      ivSiteTitle: 'หลังมือซ้าย',
-      ivSiteSub: 'Cephalic vein',
-      scheduleStatus: 'overdue',
-      scheduleTitle: 'เกินกำหนด',
-      scheduleText: '14:00 น. · เกินกำหนด',
-      scheduleTime: '00:18:24',
-      infStatus: 'review_blue',
-      phleStatus: 'review_red',
-      confidence: '91%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtnText: 'ตรวจเข็ม # 1',
-      needleBtnStyle: 'primary' // dark blue
-    },
-    {
-      id: '2',
-      name: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      room: 'PICU',
-      bed: 'เตียง A02',
-      progress: '0 / 168 ชม.',
-      roundText: 'รอบ 1',
-      usageStatus: 'ถอดแล้ว · ทุก 8 ชม.',
-      ivSiteTitle: 'หลังมือขวา',
-      ivSiteSub: 'Metacarpal vein',
-      scheduleStatus: 'upcoming',
-      scheduleTitle: 'ใกล้ถึงกำหนด',
-      scheduleText: '16:00 น. · เหลือ',
-      scheduleTime: '07:42:10',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      confidence: '91%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtnText: 'ตรวจเข็ม # 2',
-      needleBtnStyle: 'secondary' // light blue
-    },
-    {
-      id: '3',
-      name: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      room: 'PICU',
-      bed: 'เตียง A02',
-      progress: '0 / 168 ชม.',
-      roundText: 'รอบ 1',
-      usageStatus: 'ถอดแล้ว · ทุก 8 ชม.',
-      ivSiteTitle: 'หลังมือซ้าย',
-      ivSiteSub: 'Cephalic vein',
-      scheduleStatus: 'upcoming',
-      scheduleTitle: 'ใกล้ถึงกำหนด',
-      scheduleText: '16:00 น. · เหลือ',
-      scheduleTime: '07:42:10',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      confidence: '91%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtnText: 'ตรวจเข็ม # 3',
-      needleBtnStyle: 'secondary'
-    },
-    {
-      id: '4',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      room: 'PICU',
-      bed: 'เตียง C12',
-      progress: '30 / 168 ชม.',
-      roundText: 'รอบ 15',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      ivSiteTitle: 'ตำแหน่ง IV Site',
-      ivSiteSub: '',
-      scheduleStatus: 'upcoming',
-      scheduleTitle: 'ใกล้ถึงกำหนด',
-      scheduleText: '16:00 น. · เหลือ',
-      scheduleTime: '01:42:10',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      confidence: '96%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtnText: 'ตรวจเข็ม # 1',
-      needleBtnStyle: 'secondary'
-    },
-    {
-      id: '5',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      room: 'PICU',
-      bed: 'เตียง B12',
-      progress: '14 / 168 ชม.',
-      roundText: 'รอบ 7',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      ivSiteTitle: 'ตำแหน่ง IV Site',
-      ivSiteSub: '',
-      scheduleStatus: 'upcoming',
-      scheduleTitle: 'ใกล้ถึงกำหนด',
-      scheduleText: '16:00 น. · เหลือ',
-      scheduleTime: '01:42:10',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      confidence: '98%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtnText: 'ตรวจเข็ม # 1',
-      needleBtnStyle: 'secondary'
-    },
-    {
-      id: '6',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      room: 'PICU',
-      bed: 'เตียง B12',
-      progress: '14 / 168 ชม.',
-      roundText: 'รอบ 7',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      ivSiteTitle: 'ตำแหน่ง IV Site',
-      ivSiteSub: '',
-      scheduleStatus: 'upcoming',
-      scheduleTitle: 'ใกล้ถึงกำหนด',
-      scheduleText: '16:00 น. · เหลือ',
-      scheduleTime: '01:42:10',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      confidence: '98%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtnText: 'ตรวจเข็ม # 1',
-      needleBtnStyle: 'secondary'
-    },
-    {
-      id: '7',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      room: 'PICU',
-      bed: 'เตียง B12',
-      progress: '14 / 168 ชม.',
-      roundText: 'รอบ 7',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      ivSiteTitle: 'ตำแหน่ง IV Site',
-      ivSiteSub: '',
-      scheduleStatus: 'upcoming',
-      scheduleTitle: 'ใกล้ถึงกำหนด',
-      scheduleText: '16:00 น. · เหลือ',
-      scheduleTime: '01:42:10',
-      infStatus: 'normal',
-      phleStatus: 'normal',
-      confidence: '98%',
-      confidenceTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtnText: 'ตรวจเข็ม # 1',
-      needleBtnStyle: 'secondary'
-    }
-  ];
+  const board = useApi(() => api.get<BoardRow[]>('/api/rounds/board'), []);
+  const now = useNow(1000);
+
+  const inspectionRows = (board.data ?? []).map((source) => {
+    const round = source.next_round;
+    const latest = source.latest_analysis;
+    const schedule = round?.schedule_status ?? 'upcoming';
+    const flaggedReview = (condition: 'infiltration' | 'phlebitis') => {
+      const view = latest?.conditions[condition];
+      if (!view) return 'normal';
+      if (view.review) return view.review.finding === 'observation_found' ? 'review_confirmed' : 'normal';
+      return view.flagged ? 'review_pending' : 'normal';
+    };
+    return {
+      id: String(source.id),
+      source,
+      name: source.patient.full_name,
+      hnAn: hnAn(source.patient),
+      room: source.patient.ward,
+      bed: source.patient.bed ?? '-',
+      progress: `${Math.floor(source.elapsed_hours)} / ${source.duration_hours} ชม.`,
+      roundText: round ? `รอบ ${round.round_no} / ${source.total_rounds}` : 'ไม่มีรอบคงเหลือ',
+      usageStatus: `ใช้งานอยู่ · ทุก ${source.interval_hours} ชม.`,
+      ivSiteTitle: source.location,
+      ivSiteSub: `${source.label} · ${source.vein}`,
+      scheduleStatus: schedule,
+      scheduleTitle: scheduleLabel[schedule],
+      scheduleText: round
+        ? `${fmtTime(round.due_at)} · ${schedule === 'overdue' ? 'เกินกำหนด' : schedule === 'due' ? 'ถึงกำหนด' : 'เหลือ'}`
+        : '-',
+      scheduleTime: round && schedule !== 'due' ? countdown(round.due_at, now) : '',
+      infStatus: flaggedReview('infiltration'),
+      phleStatus: flaggedReview('phlebitis'),
+      confidence: latest?.prediction_issued ? pct(latest.confidence) : '-',
+      confidenceTime: latest ? `วิเคราะห์เวลา ${fmtTime(latest.created_at)}` : 'ยังไม่มีผล AI',
+      needleBtnText: `ตรวจเข็ม #${source.needle_no}`,
+      needleBtnStyle: schedule === 'upcoming' ? 'secondary' : 'primary'
+    };
+  });
+
+  const counts = {
+    due: inspectionRows.filter((r) => r.scheduleStatus === 'due').length,
+    upcoming: inspectionRows.filter((r) => r.scheduleStatus === 'upcoming').length,
+    skipped: (board.data ?? []).reduce((sum, r) => sum + r.skipped_rounds, 0),
+    overdue: inspectionRows.filter((r) => r.scheduleStatus === 'overdue').length
+  };
 
   const filteredRows = inspectionRows.filter((r) => {
     const matchSearch =
@@ -229,6 +125,8 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
 
     if (statusFilter === 'overdue') return matchSearch && r.scheduleStatus === 'overdue';
     if (statusFilter === 'upcoming') return matchSearch && r.scheduleStatus === 'upcoming';
+    if (statusFilter === 'due') return matchSearch && r.scheduleStatus === 'due';
+    if (statusFilter === 'ai_review') return matchSearch && r.source.latest_analysis?.review_status === 'pending_review';
     return matchSearch;
   });
 
@@ -256,7 +154,7 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
               <Clock className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 leading-none">0</div>
+              <div className="text-2xl font-bold text-slate-900 leading-none">{counts.due}</div>
               <div className="text-[12px] text-slate-500 font-medium mt-1">ถึงกำหนดตรวจ</div>
             </div>
           </div>
@@ -269,7 +167,7 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
               <Calendar className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 leading-none">6</div>
+              <div className="text-2xl font-bold text-slate-900 leading-none">{counts.upcoming}</div>
               <div className="text-[12px] text-slate-500 font-medium mt-1">ใกล้ถึงกำหนด</div>
             </div>
           </div>
@@ -282,8 +180,8 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
               <BedDouble className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 leading-none">0</div>
-              <div className="text-[12px] text-slate-500 font-medium mt-1">ผู้ป่วยข้ามรอบ</div>
+              <div className="text-2xl font-bold text-slate-900 leading-none">{counts.skipped}</div>
+              <div className="text-[12px] text-slate-500 font-medium mt-1">รอบที่ข้าม (IV Site ที่ใช้งาน)</div>
             </div>
           </div>
         </div>
@@ -295,7 +193,7 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 leading-none">1</div>
+              <div className="text-2xl font-bold text-slate-900 leading-none">{counts.overdue}</div>
               <div className="text-[12px] text-slate-500 font-medium mt-1">เกินกำหนด</div>
             </div>
           </div>
@@ -325,7 +223,8 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
             <option value="all">ทั้งหมด</option>
             <option value="overdue">เกินกำหนด</option>
             <option value="upcoming">ใกล้ถึงกำหนด</option>
-            <option value="completed">เสร็จสิ้น</option>
+            <option value="due">ถึงกำหนดตรวจ</option>
+            <option value="ai_review">รอทบทวนผล AI</option>
           </select>
         </div>
       </div>
@@ -361,11 +260,16 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
                 <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
                   {/* ผู้ป่วย */}
                   <td className="py-4 px-4">
-                    <div className="font-bold text-slate-900">{row.name}</div>
+                    <button
+                      onClick={() => !draggedFar && onOpenPatient?.(selectRow(row.source))}
+                      className="font-bold text-slate-900 hover:text-[#1E58E6] hover:underline cursor-pointer text-left"
+                    >
+                      {row.name}
+                    </button>
                     <div className="text-[12px] text-slate-400 font-normal mt-0.5">{row.hnAn}</div>
                     <span className="inline-flex items-center gap-1.5 bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] px-2.5 py-0.5 rounded-full text-[11px] font-medium mt-1.5 shadow-2xs">
                       <CheckCircle2 className="w-3.5 h-3.5 text-[#059669] stroke-[2.5]" />
-                      <span>ยืนยันจาก HIS</span>
+                      <span>{row.source.patient.age_text ?? 'ลงทะเบียนแล้ว'}</span>
                     </span>
                   </td>
 
@@ -433,7 +337,7 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
                     ) : (
                       <button className="bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] hover:bg-[#DBEAFE] px-3.5 py-1.5 rounded-full text-[12px] font-bold inline-flex items-center gap-2 transition-all shadow-2xs cursor-pointer">
                         <Sparkles className="w-3.5 h-3.5 text-[#2563EB] stroke-[2]" />
-                        <span>Infiltration ควรตรวจสอบ</span>
+                        <span>{row.infStatus === 'review_confirmed' ? 'Infiltration ยืนยันพบ' : 'Infiltration ควรตรวจสอบ'}</span>
                       </button>
                     )}
                   </td>
@@ -448,7 +352,7 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
                     ) : (
                       <button className="bg-[#FEF2F2] text-[#DC2626] border border-[#FCA5A5] hover:bg-[#FEE2E2] px-3.5 py-1.5 rounded-full text-[12px] font-bold inline-flex items-center gap-2 transition-all shadow-2xs cursor-pointer">
                         <PhlebitisIcon className="w-3.5 h-3.5 text-[#DC2626]" />
-                        <span>Phlebitis ควรตรวจสอบ</span>
+                        <span>{row.phleStatus === 'review_confirmed' ? 'Phlebitis ยืนยันพบ' : 'Phlebitis ควรตรวจสอบ'}</span>
                       </button>
                     )}
                   </td>
@@ -465,14 +369,14 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
                   <td className="py-4 px-4 text-center w-36">
                     {row.needleBtnStyle === 'primary' ? (
                       <button
-                        onClick={() => !draggedFar && onInspectNeedle?.(row)}
+                        onClick={() => !draggedFar && onInspectNeedle?.(selectRow(row.source))}
                         className="bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[13px] px-4 py-1.5 rounded-xl block w-full text-center shadow-xs cursor-pointer mb-1.5 transition-all"
                       >
                         {row.needleBtnText}
                       </button>
                     ) : (
                       <button
-                        onClick={() => !draggedFar && onInspectNeedle?.(row)}
+                        onClick={() => !draggedFar && onInspectNeedle?.(selectRow(row.source))}
                         className="bg-[#93C5FD] hover:bg-blue-400 text-white font-bold text-[13px] px-4 py-1.5 rounded-xl block w-full text-center shadow-xs cursor-pointer mb-1.5 transition-all"
                       >
                         {row.needleBtnText}
@@ -493,17 +397,8 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
 
         {/* Table Pagination Footer */}
         <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <div>Showing 10 of 10 Historical Log</div>
-          <div className="flex items-center gap-1">
-            <button className="px-3.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-slate-600 cursor-pointer shadow-2xs">
-              Previous
-            </button>
-            <button className="w-8 h-8 bg-[#1E58E6] text-white font-bold rounded-lg flex items-center justify-center shadow-2xs cursor-pointer">
-              1
-            </button>
-            <button className="w-8 h-8 border border-slate-200 text-slate-600 font-medium rounded-lg flex items-center justify-center bg-white hover:bg-slate-50 shadow-2xs cursor-pointer">
-              2
-            </button>
+          <div>
+            {board.loading ? 'กำลังโหลด...' : board.error ? <span className="text-red-600">{board.error}</span> : `ทั้งหมด ${filteredRows.length} รายการ`}
           </div>
         </div>
       </div>
@@ -539,14 +434,16 @@ export const RoundsInspection: React.FC<RoundsInspectionProps> = ({ onInspectNee
       {/* Skip Round Modal */}
       {selectedSkipPatient && (
         <SkipRoundModal
-          patientName={selectedSkipPatient.patientName || 'ชื่อ-นามสกุล-คนไข้'}
-          ward={selectedSkipPatient.ward || 'PICU'}
-          room="ห้อง A-01"
-          bed={selectedSkipPatient.bed || 'เตียง C32'}
-          dueTime="12:00 น."
+          roundId={selectedSkipPatient.source.next_round?.id}
+          patientName={selectedSkipPatient.name}
+          ward={selectedSkipPatient.source.patient.ward}
+          room={selectedSkipPatient.source.patient.room ?? '-'}
+          bed={selectedSkipPatient.bed}
+          dueTime={fmtTime(selectedSkipPatient.source.next_round?.due_at)}
           onClose={() => setSelectedSkipPatient(null)}
           onConfirmSuccess={() => {
             setSelectedSkipPatient(null);
+            board.reload();
           }}
         />
       )}

@@ -3,11 +3,11 @@ import {
   RefreshCw,
   ChevronRight,
   Clock,
-  AlertTriangle,
   Bell,
   ClipboardList,
-  CalendarClock
 } from 'lucide-react';
+import { Sparkline } from './Sparkline';
+import { sum, useDailyTrend } from '../api/trend';
 
 interface Patient {
   id: string;
@@ -23,9 +23,51 @@ interface Patient {
   aiStatus: string;
   aiType: string;
   urgency: string;
+  dueClock: string;
+  countdownText: string;
 }
 
+export interface OverviewNotification {
+  id: number;
+  category: 'due' | 'ai' | 'system';
+  title: string;
+  body: string | null;
+  timeText: string;
+}
+
+export interface OverviewData {
+  stats: {
+    tracked_patients: number;
+    active_sites: number;
+    overdue: number;
+    due: number;
+    upcoming: number;
+    pending_reviews: number;
+    skipped_today: number;
+    missed_today: number;
+    pending_today: number;
+    inspections_today: number;
+    on_time_rate: number | null;
+    ending_today: number;
+  };
+  conditions: Record<'infiltration' | 'phlebitis', { total: number; high_risk: number; grades: Record<string, number> }>;
+}
+
+const EMPTY_OVERVIEW: OverviewData = {
+  stats: {
+    tracked_patients: 0, active_sites: 0, overdue: 0, due: 0, upcoming: 0, pending_reviews: 0,
+    skipped_today: 0, missed_today: 0, pending_today: 0, inspections_today: 0, on_time_rate: null, ending_today: 0
+  },
+  conditions: {
+    infiltration: { total: 0, high_risk: 0, grades: { '1': 0, '2': 0, '3': 0, '4': 0 } },
+    phlebitis: { total: 0, high_risk: 0, grades: { '1': 0, '2': 0, '3': 0, '4': 0 } }
+  }
+};
+
 interface DashboardOverviewProps {
+  overview?: OverviewData | null;
+  notifications?: OverviewNotification[];
+  onSelectPatient?: (id: string) => void;
   onNavigate: (nav: string) => void;
   handleRefresh: () => void;
   isRefreshing: boolean;
@@ -37,13 +79,31 @@ interface DashboardOverviewProps {
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
+  overview,
+  notifications = [],
+  onSelectPatient,
   onNavigate,
   handleRefresh,
   isRefreshing,
+  filteredPatients,
   setTableFilter,
 }) => {
+  const trend = useDailyTrend('7d');
   const [gradeFilter, setGradeFilter] = React.useState<'all' | 'infill' | 'phleb'>('all');
   const [inspectionFilter, setInspectionFilter] = React.useState<string>('all');
+  const { stats, conditions } = overview ?? EMPTY_OVERVIEW;
+  const inf = conditions.infiltration;
+  const phl = conditions.phlebitis;
+  const gradeCount = (grade: number) => {
+    const key = String(grade);
+    if (gradeFilter === 'infill') return { inf: inf.grades[key], phl: 0 };
+    if (gradeFilter === 'phleb') return { inf: 0, phl: phl.grades[key] };
+    return { inf: inf.grades[key], phl: phl.grades[key] };
+  };
+  const gradeTotal = gradeFilter === 'infill' ? inf.total : gradeFilter === 'phleb' ? phl.total : inf.total + phl.total;
+  const onTimePct = stats.on_time_rate === null ? null : Math.round(stats.on_time_rate * 100);
+  const timelinessMax = Math.max(stats.overdue, stats.pending_today, stats.skipped_today + stats.missed_today, stats.inspections_today, 1);
+  const barWidth = (value: number) => `${Math.round((value / timelinessMax) * 100)}%`;
 
   return (
     <div className="space-y-6">
@@ -102,11 +162,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </svg>
 
             <div className="text-[30px] text-slate-900 font-bold leading-none">
-              4
+              {stats.tracked_patients}
             </div>
           </div>
           <div className="text-[12px] text-slate-500 font-medium">
-            ระยะติดตาม 96 ชั่วโมง
+            IV Site ที่ติดตามอยู่ {stats.active_sites} ตำแหน่ง
           </div>
         </div>
 
@@ -134,7 +194,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </svg>
 
             <div className="text-[30px] text-slate-900 font-bold leading-none">
-              1
+              {stats.due}
             </div>
           </div>
           <div className="text-[12px] text-slate-500 font-medium">
@@ -167,7 +227,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </svg>
 
             <div className="text-[30px] text-slate-900 font-bold leading-none">
-              1
+              {stats.overdue}
             </div>
           </div>
           <div className="text-[12px] text-red-600 font-semibold">
@@ -203,11 +263,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </svg>
 
             <div className="text-[30px] text-slate-900 font-bold leading-none">
-              2
+              {stats.upcoming}
             </div>
           </div>
           <div className="text-[12px] text-teal-700 font-semibold">
-            ภายใน 30 นาที
+            ยังไม่ถึงเวลาตรวจ
           </div>
         </div>
 
@@ -231,11 +291,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </svg>
 
             <div className="text-[30px] text-slate-900 font-bold leading-none">
-              0
+              {stats.skipped_today}
             </div>
           </div>
           <div className="text-[12px] text-slate-500 font-medium">
-            ไม่นับเป็นรอบตรวจที่ดำเนินการแล้ว
+            วันนี้ · ไม่นับเป็นรอบตรวจที่ดำเนินการแล้ว
           </div>
         </div>
 
@@ -266,7 +326,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </svg>
 
             <div className="text-[30px] text-slate-900 font-bold leading-none">
-              2
+              {stats.pending_reviews}
             </div>
           </div>
           <div className="text-[12px] text-slate-500 font-medium">
@@ -301,7 +361,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </svg>
 
             <div className="text-[30px] text-slate-900 font-bold leading-none">
-              1
+              {stats.ending_today}
             </div>
           </div>
           <div className="text-[12px] text-slate-500 font-medium">
@@ -386,49 +446,30 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="bg-gradient-to-b from-[#0086FF] to-[#005099] text-white rounded-xl p-2.5 text-center shadow-2xs">
                 <div className="text-[11px] opacity-90 font-medium">รายการทั้งหมด</div>
-                <div className="text-xl font-bold">4</div>
+                <div className="text-xl font-bold">{inf.total}</div>
               </div>
               <div className="bg-slate-50 rounded-xl p-2.5 text-center border border-slate-200/80">
                 <div className="text-[11px] text-slate-500 font-medium">
                   อยู่ระหว่างเฝ้าระวัง
                 </div>
-                <div className="text-xl font-bold text-slate-800">3</div>
+                <div className="text-xl font-bold text-slate-800">{inf.total - inf.high_risk}</div>
               </div>
               <div className="bg-red-50 rounded-xl p-2.5 text-center border border-red-200">
                 <div className="text-[11px] text-red-600 font-semibold">
-                  รอยืนยันเร่งด่วน
+                  Grade 3–4
                 </div>
-                <div className="text-xl font-bold text-red-600">1</div>
+                <div className="text-xl font-bold text-red-600">{inf.high_risk}</div>
               </div>
             </div>
 
             {/* Trend Area Chart */}
             <div className="mt-4 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs">
               <div className="flex items-center justify-between text-[13px] mb-1">
-                <span className="font-bold text-slate-800">แนวโน้ม</span>
-                <span className="font-bold text-slate-900">+12.4%</span>
+                <span className="font-bold text-slate-800">แนวโน้ม 7 วัน</span>
+                <span className="font-bold text-slate-900">{sum(trend.infiltration)} ราย</span>
               </div>
               <div className="w-full h-12 pt-1">
-                <svg className="w-full h-full" viewBox="0 0 250 45" preserveAspectRatio="none" fill="none">
-                  <defs>
-                    <linearGradient id="infill-trend-grad-full" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0070F3" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#0070F3" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M 0,35 L 45,32 L 90,34 L 145,22 L 195,28 L 250,10 L 250,45 L 0,45 Z"
-                    fill="url(#infill-trend-grad-full)"
-                  />
-                  <path
-                    d="M 0,35 L 45,32 L 90,34 L 145,22 L 195,28 L 250,10"
-                    stroke="#0070F3"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="250" cy="10" r="3.5" fill="#0070F3" />
-                </svg>
+                <Sparkline values={trend.infiltration} color="#0070F3" id="overview-inf-trend" />
               </div>
             </div>
           </div>
@@ -436,10 +477,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           {/* Bottom Footer Link */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[12px]">
             <span className="text-slate-500 font-medium">
-              รายงานตรวจที่ประเมินเป็นเร่งด่วนแรก
+              เรียงรายการเร่งด่วนก่อน
             </span>
             <button className="text-blue-600 font-semibold hover:underline flex items-center gap-1 cursor-pointer">
-              <span>ชื่อ-นามสกุลคนไข้ • ผล AI รอการทบทวน</span>
+              <span>ดูรายการทั้งหมด</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -511,49 +552,30 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="bg-gradient-to-b from-[#0086FF] to-[#005099] text-white rounded-xl p-2.5 text-center shadow-2xs">
                 <div className="text-[11px] opacity-90 font-medium">รายการทั้งหมด</div>
-                <div className="text-xl font-bold">4</div>
+                <div className="text-xl font-bold">{phl.total}</div>
               </div>
               <div className="bg-slate-50 rounded-xl p-2.5 text-center border border-slate-200/80">
                 <div className="text-[11px] text-slate-500 font-medium">
                   อยู่ระหว่างเฝ้าระวัง
                 </div>
-                <div className="text-xl font-bold text-slate-800">3</div>
+                <div className="text-xl font-bold text-slate-800">{phl.total - phl.high_risk}</div>
               </div>
               <div className="bg-red-50 rounded-xl p-2.5 text-center border border-red-200">
                 <div className="text-[11px] text-red-600 font-semibold">
-                  รอยืนยันเร่งด่วน
+                  Grade 3–4
                 </div>
-                <div className="text-xl font-bold text-red-600">1</div>
+                <div className="text-xl font-bold text-red-600">{phl.high_risk}</div>
               </div>
             </div>
 
             {/* Trend Area Chart */}
             <div className="mt-4 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs">
               <div className="flex items-center justify-between text-[13px] mb-1">
-                <span className="font-bold text-slate-800">แนวโน้ม</span>
-                <span className="font-bold text-slate-900">+8.7%</span>
+                <span className="font-bold text-slate-800">แนวโน้ม 7 วัน</span>
+                <span className="font-bold text-slate-900">{sum(trend.phlebitis)} ราย</span>
               </div>
               <div className="w-full h-12 pt-1">
-                <svg className="w-full h-full" viewBox="0 0 250 45" preserveAspectRatio="none" fill="none">
-                  <defs>
-                    <linearGradient id="phleb-trend-grad-full" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#DC2626" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#DC2626" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M 0,35 L 50,31 L 90,33 L 140,20 L 190,26 L 250,12 L 250,45 L 0,45 Z"
-                    fill="url(#phleb-trend-grad-full)"
-                  />
-                  <path
-                    d="M 0,35 L 50,31 L 90,33 L 140,20 L 190,26 L 250,12"
-                    stroke="#DC2626"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="250" cy="12" r="3.5" fill="#DC2626" />
-                </svg>
+                <Sparkline values={trend.phlebitis} color="#DC2626" id="overview-phl-trend" />
               </div>
             </div>
           </div>
@@ -561,10 +583,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           {/* Bottom Footer Link */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[12px]">
             <span className="text-slate-500 font-medium">
-              รายงานตรวจที่ประเมินเป็นเร่งด่วนแรก
+              เรียงรายการเร่งด่วนก่อน
             </span>
             <button className="text-red-600 font-semibold hover:underline flex items-center gap-1 cursor-pointer">
-              <span>ชื่อ-นามสกุลคนไข้ • ผล AI รอการทบทวน</span>
+              <span>ดูรายการทั้งหมด</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -603,7 +625,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <span>รวม</span>
               <span className={`font-extrabold text-[11px] px-1.5 py-0.5 rounded-md leading-none ${gradeFilter === 'all' ? 'bg-white text-[#1E58E6]' : 'bg-slate-200/80 text-slate-600'
                 }`}>
-                2
+                {inf.total + phl.total}
               </span>
             </button>
 
@@ -617,7 +639,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <span>Infiltration</span>
               <span className={`font-extrabold text-[11px] px-1.5 py-0.5 rounded-md leading-none ${gradeFilter === 'infill' ? 'bg-white text-[#1E58E6]' : 'bg-slate-200/80 text-slate-600'
                 }`}>
-                1
+                {inf.total}
               </span>
             </button>
 
@@ -631,7 +653,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <span>Phlebitis</span>
               <span className={`font-extrabold text-[11px] px-1.5 py-0.5 rounded-md leading-none ${gradeFilter === 'phleb' ? 'bg-white text-[#1E58E6]' : 'bg-slate-200/80 text-slate-600'
                 }`}>
-                1
+                {phl.total}
               </span>
             </button>
           </div>
@@ -640,7 +662,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {/* Total Count & Legend Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pt-1">
           <div>
-            <div className="text-4xl font-extrabold text-slate-900 leading-none">2</div>
+            <div className="text-4xl font-extrabold text-slate-900 leading-none">{gradeTotal}</div>
             <div className="text-[12px] text-slate-500 font-medium mt-1">
               รายการที่ได้รับการยืนยันแล้ว · ทุกหมวด
             </div>
@@ -661,47 +683,32 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
         {/* Grade Bars Stack */}
         <div className="space-y-3.5 pt-1">
-          {/* Grade 1 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 1</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-              <div className="bg-gradient-to-r from-[#0EA5E9] to-[#085D83] h-full w-[50%] rounded-full shadow-2xs transition-all duration-500"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">1</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">50.0%</span>
-          </div>
-
-          {/* Grade 2 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 2</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100 shadow-inner">
-              <div className="w-1.5 h-full bg-gradient-to-r from-[#0EA5E9] to-[#085D83] rounded-l-full shrink-0"></div>
-              <div className="w-1.5 h-full bg-gradient-to-r from-[#EF4444] to-[#892727] rounded-r-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0%</span>
-          </div>
-
-          {/* Grade 3 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 3</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-              <div className="bg-gradient-to-r from-[#EF4444] to-[#892727] h-full w-[50%] rounded-full shadow-2xs transition-all duration-500"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">1</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">50.0%</span>
-          </div>
-
-          {/* Grade 4 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 4</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100 shadow-inner">
-              <div className="w-1.5 h-full bg-gradient-to-r from-[#0EA5E9] to-[#085D83] rounded-l-full shrink-0"></div>
-              <div className="w-1.5 h-full bg-gradient-to-r from-[#EF4444] to-[#892727] rounded-r-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0%</span>
-          </div>
+          {[1, 2, 3, 4].map((grade) => {
+            const count = gradeCount(grade);
+            const total = count.inf + count.phl;
+            const share = gradeTotal ? (total / gradeTotal) * 100 : 0;
+            return (
+              <div key={grade} className="flex items-center gap-3 text-[13px]">
+                <span className="w-16 font-medium text-slate-700 shrink-0">Grade {grade}</span>
+                <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
+                  {count.inf > 0 && (
+                    <div
+                      className="bg-gradient-to-r from-[#0EA5E9] to-[#085D83] h-full rounded-full shadow-2xs transition-all duration-500"
+                      style={{ width: `${gradeTotal ? (count.inf / gradeTotal) * 100 : 0}%` }}
+                    ></div>
+                  )}
+                  {count.phl > 0 && (
+                    <div
+                      className="bg-gradient-to-r from-[#EF4444] to-[#892727] h-full rounded-full shadow-2xs transition-all duration-500"
+                      style={{ width: `${gradeTotal ? (count.phl / gradeTotal) * 100 : 0}%` }}
+                    ></div>
+                  )}
+                </div>
+                <span className="w-6 font-bold text-slate-900 text-right shrink-0">{total}</span>
+                <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">{share.toFixed(1)}%</span>
+              </div>
+            );
+          })}
         </div>
 
         {/* Bottom Footer Note & Action */}
@@ -772,7 +779,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     {/* Ring Arc with gradient */}
                     <path
                       stroke="url(#donut-gradient)"
-                      strokeDasharray="92, 100"
+                      strokeDasharray={`${onTimePct ?? 0}, 100`}
                       strokeWidth="4"
                       strokeLinecap="round"
                       fill="none"
@@ -781,10 +788,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                     <span className="text-3xl font-extrabold text-slate-900 leading-none">
-                      92%
+                      {onTimePct === null ? '-' : `${onTimePct}%`}
                     </span>
                     <span className="text-[10px] font-semibold text-slate-400 mt-1">
-                      คำนวณจากทั้งหมด
+                      ตรวจตรงรอบวันนี้
                     </span>
                   </div>
                 </div>
@@ -795,37 +802,37 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 {/* Overdue */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                    <div className="bg-gradient-to-r from-[#EF4444] to-[#892727] h-full w-[25%] rounded-full shadow-2xs"></div>
+                    <div className="bg-gradient-to-r from-[#EF4444] to-[#892727] h-full rounded-full shadow-2xs" style={{ width: barWidth(stats.overdue) }}></div>
                   </div>
                   <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">เกินกำหนด</span>
-                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">3</span>
+                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{stats.overdue}</span>
                 </div>
 
                 {/* Due Today */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                    <div className="bg-gradient-to-r from-[#4F46E5] to-[#2C277F] h-full w-[45%] rounded-full shadow-2xs"></div>
+                    <div className="bg-gradient-to-r from-[#4F46E5] to-[#2C277F] h-full rounded-full shadow-2xs" style={{ width: barWidth(stats.skipped_today + stats.missed_today) }}></div>
                   </div>
-                  <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ครบกำหนดตรวจวันนี้</span>
-                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">7</span>
+                  <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ข้าม / พลาดรอบวันนี้</span>
+                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{stats.skipped_today + stats.missed_today}</span>
                 </div>
 
                 {/* Pending */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                    <div className="bg-gradient-to-r from-[#A855F7] to-[#633291] h-full w-[65%] rounded-full shadow-2xs"></div>
+                    <div className="bg-gradient-to-r from-[#A855F7] to-[#633291] h-full rounded-full shadow-2xs" style={{ width: barWidth(stats.pending_today) }}></div>
                   </div>
                   <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">รอดำเนินการ</span>
-                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">18</span>
+                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{stats.pending_today}</span>
                 </div>
 
                 {/* Completed */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                    <div className="bg-gradient-to-r from-[#22C55E] to-[#14532D] h-full w-[85%] rounded-full shadow-2xs"></div>
+                    <div className="bg-gradient-to-r from-[#22C55E] to-[#14532D] h-full rounded-full shadow-2xs" style={{ width: barWidth(stats.inspections_today) }}></div>
                   </div>
                   <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ดำเนินการครบถ้วน</span>
-                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">42</span>
+                  <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{stats.inspections_today}</span>
                 </div>
               </div>
             </div>
@@ -926,139 +933,63 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-[12px]">
-                  {/* Row 1 */}
-                  <tr className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-900 text-[13px]">
-                        ชื่อ-นามสกุลคนไข้
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        HN56789012 • กุมารเวชกรรม
-                      </div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">PICU</div>
-                      <div className="text-[11px] text-slate-500">เตียง B04</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">32 / 168 ชม.</div>
-                      <div className="text-[11px] text-slate-500">รอบ 16 / 48</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-100/80 text-red-900 border border-red-200/80 rounded-full text-[12px] font-bold">
-                        <Clock className="w-3.5 h-3.5 text-red-800 shrink-0" />
-                        <span>เกินกำหนด</span>
-                      </div>
-                      <div className="text-[12px] text-slate-500 font-medium mt-1">
-                        14:00 น. · เกินกำหนด <span className="text-red-600 font-bold">00:12</span>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Row 2 */}
-                  <tr className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-900 text-[13px]">
-                        ชื่อ-นามสกุลคนไข้
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        HN56789012 • กุมารเวชกรรม
-                      </div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">PICU</div>
-                      <div className="text-[11px] text-slate-500">เตียง A02</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">28 / 168 ชม.</div>
-                      <div className="text-[11px] text-slate-500">รอบ 14 / 48</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-100/80 text-amber-950 border border-orange-200/80 rounded-full text-[12px] font-bold">
-                        <Clock className="w-3.5 h-3.5 text-amber-900 shrink-0" />
-                        <span>ถึงกำหนดตรวจ</span>
-                      </div>
-                      <div className="text-[12px] text-slate-500 font-medium mt-1">
-                        14:00 น. · <span className="text-amber-900 font-bold">ถึงกำหนดตรวจ</span>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Row 3 */}
-                  <tr className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-900 text-[13px]">
-                        ชื่อ-นามสกุลคนไข้
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        HN56789012 • กุมารเวชกรรม
-                      </div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">PICU</div>
-                      <div className="text-[11px] text-slate-500">เตียง C12</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">14 / 168 ชม.</div>
-                      <div className="text-[11px] text-slate-500">รอบ 7 / 48</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-100/80 text-sky-800 border border-sky-200/80 rounded-full text-[12px] font-bold">
-                        <CalendarClock className="w-3.5 h-3.5 text-sky-700 shrink-0" />
-                        <span>ใกล้ถึงกำหนด</span>
-                      </div>
-                      <div className="text-[12px] text-slate-500 font-medium mt-1">
-                        16:00 น. · เหลือ <span className="text-sky-600 font-bold">01:42:10</span>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Row 4 */}
-                  <tr className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-900 text-[13px]">
-                        ชื่อ-นามสกุลคนไข้
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        HN56789012 • กุมารเวชกรรม
-                      </div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">PICU</div>
-                      <div className="text-[11px] text-slate-500">เตียง B12</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="font-bold text-slate-800">4 / 168 ชม.</div>
-                      <div className="text-[11px] text-slate-500">รอบ 2 / 48</div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-100/80 text-sky-800 border border-sky-200/80 rounded-full text-[12px] font-bold">
-                        <CalendarClock className="w-3.5 h-3.5 text-sky-700 shrink-0" />
-                        <span>ใกล้ถึงกำหนด</span>
-                      </div>
-                      <div className="text-[12px] text-slate-500 font-medium mt-1">
-                        14:00 น. · เหลือ <span className="text-sky-600 font-bold">00:42:18</span>
-                      </div>
-                    </td>
-                  </tr>
+                  {filteredPatients.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-slate-400">ไม่มีรายการตรวจที่ต้องดำเนินการ</td>
+                    </tr>
+                  )}
+                  {filteredPatients.map((p) => {
+                    const badge =
+                      p.statusType === 'overdue'
+                        ? { box: 'bg-red-100/80 text-red-900 border-red-200/80', icon: 'text-red-800', label: 'เกินกำหนด', time: 'text-red-600' }
+                        : p.statusType === 'due'
+                          ? { box: 'bg-orange-100/80 text-amber-950 border-orange-200/80', icon: 'text-amber-900', label: 'ถึงกำหนดตรวจ', time: 'text-amber-900' }
+                          : { box: 'bg-sky-100/80 text-sky-800 border-sky-200/80', icon: 'text-sky-700', label: 'ใกล้ถึงกำหนด', time: 'text-sky-600' };
+                    return (
+                      <tr
+                        key={p.id}
+                        onClick={() => onSelectPatient?.(p.id)}
+                        className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3 px-2">
+                          <div className="font-bold text-slate-900 text-[13px]">{p.name}</div>
+                          <div className="text-[11px] text-slate-500 font-medium">
+                            {p.hn} • {p.site}
+                          </div>
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className="font-bold text-slate-800">{p.ward}</div>
+                          <div className="text-[11px] text-slate-500">{p.bed}</div>
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className="font-bold text-slate-800">{p.progress}</div>
+                          <div className="text-[11px] text-slate-500">{p.round}</div>
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className={`inline-flex items-center gap-1.5 px-3 py-1 border rounded-full text-[12px] font-bold ${badge.box}`}>
+                            <Clock className={`w-3.5 h-3.5 shrink-0 ${badge.icon}`} />
+                            <span>{badge.label}</span>
+                          </div>
+                          <div className="text-[12px] text-slate-500 font-medium mt-1">
+                            {p.dueClock}
+                            {p.countdownText && (
+                              <>
+                                {' · '}
+                                <span className={`${badge.time} font-bold`}>{p.countdownText}</span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Pagination Footer */}
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[12px] text-slate-500">
-              <span>Showing 10 of 10 Historical Log</span>
-              <div className="flex items-center gap-1">
-                <button className="px-2.5 py-1 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-                  Previous
-                </button>
-                <button className="w-7 h-7 bg-[#1E58E6] text-white rounded-lg font-bold flex items-center justify-center">
-                  1
-                </button>
-                <button className="w-7 h-7 border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50 flex items-center justify-center">
-                  2
-                </button>
-              </div>
+              <span>ทั้งหมด {filteredPatients.length} รายการ</span>
             </div>
           </div>
         </div>
@@ -1084,135 +1015,35 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
               {/* Notification Items Stack */}
               <div className="divide-y divide-slate-100 text-[13px] pt-1">
-                {/* Item 1 */}
-                <div className="py-3 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-amber-50 border border-amber-200/80 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                    <Clock className="w-5 h-5 text-amber-600 stroke-[2.2]" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-900 text-[13px]">
-                        ถึงกำหนดรอบตรวจ
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-normal shrink-0">
-                        ถึงกำหนดแล้ว
-                      </span>
+                {notifications.length === 0 && (
+                  <div className="py-6 text-center text-[12px] text-slate-400">ยังไม่มีการแจ้งเตือน</div>
+                )}
+                {notifications.slice(0, 5).map((n) => (
+                  <div key={n.id} className="py-3 flex items-start gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-full border flex items-center justify-center shrink-0 mt-0.5 shadow-2xs ${
+                        n.category === 'ai' ? 'bg-red-50 border-red-200/80' : n.category === 'due' ? 'bg-amber-50 border-amber-200/80' : 'bg-sky-50 border-sky-200/80'
+                      }`}
+                    >
+                      {n.category === 'ai' ? (
+                        <svg className="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M8.5 6c-1.2 1.8-1.2 3.8 0 5.6s1.2 3.8 0 5.6" />
+                          <path d="M12 5c-1.2 1.8-1.2 3.8 0 5.6s1.2 3.8 0 5.6" />
+                          <path d="M15.5 6c-1.2 1.8-1.2 3.8 0 5.6s1.2 3.8 0 5.6" />
+                        </svg>
+                      ) : (
+                        <Clock className={`w-5 h-5 stroke-[2.2] ${n.category === 'due' ? 'text-amber-600' : 'text-sky-600'}`} />
+                      )}
                     </div>
-                    <p className="text-[12px] text-slate-500 mt-0.5 truncate">
-                      ชื่อ-นามสกุลคนไข้ · Pediatric 1 A02
-                    </p>
-                  </div>
-                </div>
-
-                {/* Item 2 */}
-                <div className="py-3 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-red-50 border border-red-200/80 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                    <svg className="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8.5 6c-1.2 1.8-1.2 3.8 0 5.6s1.2 3.8 0 5.6" />
-                      <path d="M12 5c-1.2 1.8-1.2 3.8 0 5.6s1.2 3.8 0 5.6" />
-                      <path d="M15.5 6c-1.2 1.8-1.2 3.8 0 5.6s1.2 3.8 0 5.6" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-900 text-[13px]">
-                        ผล AI สำหรับ Phlebitis รอการทบทวน
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-normal shrink-0">
-                        2 นาทีที่แล้ว
-                      </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-900 text-[13px] truncate">{n.title}</span>
+                        <span className="text-[11px] text-slate-400 font-normal shrink-0">{n.timeText}</span>
+                      </div>
+                      {n.body && <p className="text-[12px] text-slate-500 mt-0.5 truncate">{n.body}</p>}
                     </div>
-                    <p className="text-[12px] text-slate-500 mt-0.5 truncate">
-                      ชื่อ-นามสกุลคนไข้ · Pediatric 1 A02
-                    </p>
                   </div>
-                </div>
-
-                {/* Item 3 */}
-                <div className="py-3 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-amber-50 border border-amber-200/80 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                    <Clock className="w-5 h-5 text-amber-600 stroke-[2.2]" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-900 text-[13px]">
-                        ถึงกำหนดรอบตรวจ
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-normal shrink-0">
-                        ถึงกำหนดแล้ว
-                      </span>
-                    </div>
-                    <p className="text-[12px] text-slate-500 mt-0.5 truncate">
-                      ชื่อ-นามสกุลคนไข้ · Pediatric 1 A02
-                    </p>
-                  </div>
-                </div>
-
-                {/* Item 4 */}
-                <div className="py-3 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-sky-50 border border-sky-200/80 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                    <svg className="w-5 h-5 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-900 text-[13px]">
-                        ผล AI สำหรับ Infiltration รอการทบทวน
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-normal shrink-0">
-                        2 นาทีที่แล้ว
-                      </span>
-                    </div>
-                    <p className="text-[12px] text-slate-500 mt-0.5 truncate">
-                      ชื่อ-นามสกุลคนไข้ · PICU 004
-                    </p>
-                  </div>
-                </div>
-
-                {/* Item 5 */}
-                <div className="py-3 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-red-50 border border-red-200/80 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
-                    <AlertTriangle className="w-5 h-5 text-red-600 stroke-[2.2]" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-900 text-[13px]">
-                        เกินกำหนดตรวจ 18 นาที
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-normal shrink-0">
-                        เกินกำหนด
-                      </span>
-                    </div>
-                    <p className="text-[12px] text-slate-500 mt-0.5 truncate">
-                      ชื่อ-นามสกุลคนไข้ · PICU B04 รอบ 16 / 48
-                    </p>
-                  </div>
-                </div>
-
-                {/* Item 6 */}
-                <div className="py-3 flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-[#E6F9F0] border border-[#6EE7B7] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
-                    <svg className="w-5 h-5 text-[#047857]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M5 9.5a10 10 0 0 1 14 0" />
-                      <path d="M8.5 13.5a6 6 0 0 1 7 0" />
-                      <circle cx="12" cy="17.5" r="1.5" fill="#047857" stroke="none" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-900 text-[13px]">
-                        HIS เชื่อมต่อปกติ
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-normal shrink-0">
-                        ปกติ
-                      </span>
-                    </div>
-                    <p className="text-[12px] text-slate-500 mt-0.5 truncate">
-                      ปรับปรุงข้อมูลผู้ป่วยเด็กจาก HIS 128 รายการ · ไม่พบ HN ซ้ำ
-                    </p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 

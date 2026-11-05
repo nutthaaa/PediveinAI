@@ -11,9 +11,14 @@ import {
   Calendar,
   Droplet,
   X,
-  Droplets,
-  Sparkles
 } from 'lucide-react';
+import { api } from '../api/client';
+import { useApi, useNow } from '../api/useApi';
+import { countdown, fmtDateTime, fmtTime, pct, riskByGrade } from '../api/format';
+import { hnAn, selectRow, type SiteSelection } from '../api/selection';
+import type { TrackingRow } from '../api/types';
+import { Sparkline } from './Sparkline';
+import { sum, useDailyTrend } from '../api/trend';
 
 const PhlebitisIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -23,15 +28,18 @@ const PhlebitisIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4"
   </svg>
 );
 
+const RISK_COLORS = ['#10B981', '#10B981', '#F59E0B', '#EA580C', '#B91C1C'];
+
 interface PhlebitisTrackingProps {
   onNavigate?: (nav: string) => void;
-  onInspectNeedle?: (patient: any) => void;
+  onInspectNeedle?: (patient: SiteSelection) => void;
 }
 
 export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
   onNavigate,
   onInspectNeedle
 }) => {
+  const trend = useDailyTrend('7d');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
 
@@ -68,169 +76,50 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
     tableContainerRef.current.scrollLeft = scrollLeftState - walk;
   };
 
-  const rows = [
-    {
-      id: '1',
-      patientName: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      ward: 'PICU',
-      bed: 'เตียง A02',
-      progress: '98 / 168 ชม.',
-      round: 'รอบ 49',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      usageType: 'active',
-      site: 'หลังมือซ้าย',
-      vein: 'Cephalic vein',
-      dueType: 'overdue',
-      dueTimePrefix: '14:00 น. · เกินกำหนด ',
-      dueHighlight: '00:18:24',
-      aiType: 'review',
-      aiText: 'Phlebitis ควรตรวจสอบ',
-      aiConfidence: '91%',
-      aiTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtn: 'ตรวจเข็ม # 1',
-      needleBtnClass: 'bg-[#1E58E6] hover:bg-blue-700 text-white'
-    },
-    {
-      id: '2',
-      patientName: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      ward: 'PICU',
-      bed: 'เตียง A02',
-      progress: '0 / 168 ชม.',
-      round: 'รอบ 1',
-      usageStatus: 'ถอดแล้ว · ทุก 8 ชม.',
-      usageType: 'removed',
-      site: 'หลังมือขวา',
-      vein: 'Metacarpal vein',
-      dueType: 'near_due',
-      dueTimePrefix: '16:00 น. · เหลือ ',
-      dueHighlight: '07:42:10',
-      aiType: 'normal',
-      aiText: 'Phlebitis ไม่พบข้อสังเกต',
-      aiConfidence: '91%',
-      aiTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtn: 'ตรวจเข็ม # 2',
-      needleBtnClass: 'bg-[#60A5FA] hover:bg-blue-500 text-white'
-    },
-    {
-      id: '3',
-      patientName: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      ward: 'PICU',
-      bed: 'เตียง A02',
-      progress: '0 / 168 ชม.',
-      round: 'รอบ 1',
-      usageStatus: 'ถอดแล้ว · ทุก 8 ชม.',
-      usageType: 'removed',
-      site: 'หลังมือซ้าย',
-      vein: 'Cephalic vein',
-      dueType: 'near_due',
-      dueTimePrefix: '16:00 น. · เหลือ ',
-      dueHighlight: '07:42:10',
-      aiType: 'normal',
-      aiText: 'Phlebitis ไม่พบข้อสังเกต',
-      aiConfidence: '91%',
-      aiTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtn: 'ตรวจเข็ม # 3',
-      needleBtnClass: 'bg-[#60A5FA] hover:bg-blue-500 text-white'
-    },
-    {
-      id: '4',
-      patientName: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      ward: 'PICU',
-      bed: 'เตียง C12',
-      progress: '30 / 168 ชม.',
-      round: 'รอบ 15',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      usageType: 'active',
-      site: 'ตำแหน่ง IV Site',
-      vein: '',
-      dueType: 'near_due',
-      dueTimePrefix: '16:00 น. · เหลือ ',
-      dueHighlight: '01:42:10',
-      aiType: 'normal',
-      aiText: 'Phlebitis ไม่พบข้อสังเกต',
-      aiConfidence: '96%',
-      aiTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtn: 'ตรวจเข็ม # 1',
-      needleBtnClass: 'bg-[#60A5FA] hover:bg-blue-500 text-white'
-    },
-    {
-      id: '5',
-      patientName: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      ward: 'PICU',
-      bed: 'เตียง B12',
-      progress: '14 / 168 ชม.',
-      round: 'รอบ 7',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      usageType: 'active',
-      site: 'ตำแหน่ง IV Site',
-      vein: '',
-      dueType: 'near_due',
-      dueTimePrefix: '16:00 น. · เหลือ ',
-      dueHighlight: '01:42:10',
-      aiType: 'normal',
-      aiText: 'Phlebitis ไม่พบข้อสังเกต',
-      aiConfidence: '98%',
-      aiTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtn: 'ตรวจเข็ม # 1',
-      needleBtnClass: 'bg-[#60A5FA] hover:bg-blue-500 text-white'
-    },
-    {
-      id: '6',
-      patientName: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      ward: 'PICU',
-      bed: 'เตียง B12',
-      progress: '14 / 168 ชม.',
-      round: 'รอบ 7',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      usageType: 'active',
-      site: 'ตำแหน่ง IV Site',
-      vein: '',
-      dueType: 'near_due',
-      dueTimePrefix: '16:00 น. · เหลือ ',
-      dueHighlight: '01:42:10',
-      aiType: 'normal',
-      aiText: 'Phlebitis ไม่พบข้อสังเกต',
-      aiConfidence: '98%',
-      aiTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtn: 'ตรวจเข็ม # 1',
-      needleBtnClass: 'bg-[#60A5FA] hover:bg-blue-500 text-white'
-    },
-    {
-      id: '7',
-      patientName: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      ward: 'PICU',
-      bed: 'เตียง B12',
-      progress: '14 / 168 ชม.',
-      round: 'รอบ 7',
-      usageStatus: 'ใช้งานอยู่ · ทุก 2 ชม.',
-      usageType: 'active',
-      site: 'ตำแหน่ง IV Site',
-      vein: '',
-      dueType: 'near_due',
-      dueTimePrefix: '16:00 น. · เหลือ ',
-      dueHighlight: '01:42:10',
-      aiType: 'normal',
-      aiText: 'Phlebitis ไม่พบข้อสังเกต',
-      aiConfidence: '98%',
-      aiTime: 'วิเคราะห์เวลา 14:03 น.',
-      needleBtn: 'ตรวจเข็ม # 1',
-      needleBtnClass: 'bg-[#60A5FA] hover:bg-blue-500 text-white'
-    }
-  ];
+  const tracking = useApi(() => api.get<TrackingRow[]>('/api/tracking/phlebitis'), []);
+  const otherTracking = useApi(() => api.get<TrackingRow[]>('/api/tracking/infiltration'), []);
+  const now = useNow(1000);
+
+  const rows = (tracking.data ?? []).map((source) => {
+    const round = source.next_round;
+    const schedule = round?.schedule_status ?? 'upcoming';
+    const latestView = source.latest_analysis?.conditions['phlebitis'];
+    const pending = source.latest_analysis?.review_status === 'pending_review' && latestView?.flagged && !latestView.review;
+    return {
+      id: String(source.id),
+      source,
+      patientName: source.patient.full_name,
+      hnAn: hnAn(source.patient),
+      hisConfirmed: false,
+      ward: source.patient.ward,
+      bed: source.patient.bed ?? '-',
+      progress: `${Math.floor(source.elapsed_hours)} / ${source.duration_hours} ชม.`,
+      round: round ? `รอบ ${round.round_no}` : '-',
+      usageStatus: `${source.status === 'removed' ? 'ถอดแล้ว' : 'ใช้งานอยู่'} · ทุก ${source.interval_hours} ชม.`,
+      usageType: source.status === 'removed' ? 'removed' : 'active',
+      site: source.location,
+      vein: source.vein,
+      dueType: schedule === 'overdue' ? 'overdue' : 'near_due',
+      dueTimePrefix: round ? `${fmtTime(round.due_at)} · ${schedule === 'overdue' ? 'เกินกำหนด' : schedule === 'due' ? 'ถึงกำหนด' : 'เหลือ'} ` : '-',
+      dueHighlight: round && schedule !== 'due' ? countdown(round.due_at, now) : '',
+      aiType: pending ? 'review' : 'normal',
+      aiText: pending
+        ? 'Phlebitis ควรตรวจสอบ'
+        : `Grade ${source.latest_review.grade} · ${source.latest_review.risk_level}`,
+      aiConfidence: pct(latestView?.probability),
+      aiTime: source.latest_analysis ? `วิเคราะห์เวลา ${fmtTime(source.latest_analysis.created_at)}` : '-',
+      needleBtn: `ตรวจ${source.label}`,
+      needleBtnClass: schedule === 'upcoming' ? 'bg-[#93C5FD] hover:bg-blue-400 text-white' : 'bg-[#1E58E6] hover:bg-blue-700 text-white'
+    };
+  });
+
+  const grades = [1, 2, 3, 4].map((g) => rows.filter((r) => r.source.latest_review.grade === g).length);
+  const counts = {
+    total: rows.length,
+    monitoring: rows.filter((r) => r.source.latest_review.grade <= 2).length,
+    urgent: rows.filter((r) => r.source.latest_review.grade >= 3 || r.aiType === 'review').length
+  };
+  const otherCount = otherTracking.data?.length ?? 0;
 
   const filteredRows = rows.filter((r) => {
     if (statusFilter === 'overdue') return r.dueType === 'overdue';
@@ -292,29 +181,10 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
         <div className="w-full md:w-[420px] bg-white rounded-xl p-3 border border-slate-200/80 shadow-2xs">
           <div className="flex items-center justify-between text-[13px] mb-1">
             <span className="font-medium text-slate-600">แนวโน้ม</span>
-            <span className="font-bold text-slate-900">+8.7%</span>
+            <span className="font-bold text-slate-900">{sum(trend.phlebitis)} ราย · 7 วัน</span>
           </div>
           <div className="w-full h-12 pt-1">
-            <svg className="w-full h-full" viewBox="0 0 350 45" preserveAspectRatio="none" fill="none">
-              <defs>
-                <linearGradient id="phleb-page-trend" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#DC2626" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="#DC2626" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M 0,35 L 50,32 L 100,34 L 180,22 L 270,28 L 346,8 L 346,45 L 0,45 Z"
-                fill="url(#phleb-page-trend)"
-              />
-              <path
-                d="M 0,35 L 50,32 L 100,34 L 180,22 L 270,28 L 346,8"
-                stroke="#DC2626"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle cx="346" cy="8" r="4" fill="#DC2626" />
-            </svg>
+            <Sparkline values={trend.phlebitis} color="#DC2626" id="phleb-page-trend" width={350} />
           </div>
         </div>
       </div>
@@ -327,7 +197,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
             <div className="w-9 h-9 rounded-xl bg-[#EAF2FF] text-[#2563EB] flex items-center justify-center shrink-0">
               <List className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">7</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{counts.total}</div>
           </div>
           <div className="text-[13px] text-slate-500 font-medium">IV Site ทั้งหมด</div>
         </div>
@@ -338,7 +208,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
             <div className="w-9 h-9 rounded-xl bg-[#FEF3E7] text-[#D97706] flex items-center justify-center shrink-0">
               <Eye className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">6</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{counts.monitoring}</div>
           </div>
           <div className="text-[13px] text-slate-500 font-medium">อยู่ระหว่างเฝ้าระวัง</div>
         </div>
@@ -349,7 +219,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
             <div className="w-9 h-9 rounded-xl bg-[#FEF2F2] text-[#DC2626] flex items-center justify-center shrink-0">
               <AlertTriangle className="w-5 h-5 stroke-[2.2]" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">1</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{counts.urgent}</div>
           </div>
           <div className="text-[13px] text-slate-500 font-medium">รอทบทวนเร่งด่วน</div>
         </div>
@@ -378,7 +248,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
             <button className="text-slate-600 font-medium text-[13px] px-3.5 py-1.5 rounded-lg flex items-center gap-2 hover:text-slate-900 cursor-pointer shrink-0">
               <span>รวม</span>
               <span className="bg-slate-200/80 text-slate-600 font-semibold text-[11px] px-1.5 py-0.5 rounded-md leading-none">
-                2
+                {counts.total + otherCount}
               </span>
             </button>
             <button
@@ -387,13 +257,13 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
             >
               <span>Infiltration</span>
               <span className="bg-slate-200/80 text-slate-600 font-semibold text-[11px] px-1.5 py-0.5 rounded-md leading-none">
-                1
+                {otherCount}
               </span>
             </button>
             <button className="bg-[#EF4444] text-white font-semibold text-[13px] px-3.5 py-1.5 rounded-lg flex items-center gap-2 shadow-xs cursor-pointer shrink-0">
               <span>Phlebitis</span>
               <span className="bg-white text-[#EF4444] font-extrabold text-[11px] px-1.5 py-0.5 rounded-md leading-none">
-                1
+                {counts.total}
               </span>
             </button>
           </div>
@@ -402,7 +272,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
         {/* Total Count & Legend Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pt-1">
           <div>
-            <div className="text-4xl font-extrabold text-slate-900 leading-none">1</div>
+            <div className="text-4xl font-extrabold text-slate-900 leading-none">{counts.total}</div>
             <div className="text-[12px] text-slate-500 font-medium mt-1">
               รายการที่ได้รับการยืนยันแล้ว · Phlebitis
             </div>
@@ -416,45 +286,21 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
 
         {/* Grade Bars Stack */}
         <div className="space-y-3.5 pt-1">
-          {/* Grade 1 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 1</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100 shadow-inner">
-              <div className="w-1.5 h-full bg-[#EF4444]/40 rounded-full shrink-0"></div>
+          {grades.map((count, i) => (
+            <div key={i} className="flex items-center gap-3 text-[13px]">
+              <span className="w-16 font-medium text-slate-700 shrink-0">Grade {i + 1}</span>
+              <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
+                <div
+                  className="bg-gradient-to-r from-[#EF4444] to-[#892727] h-full rounded-full shadow-sm transition-all duration-500"
+                  style={{ width: `${counts.total ? (count / counts.total) * 100 : 0}%` }}
+                ></div>
+              </div>
+              <span className="w-6 font-bold text-slate-900 text-right shrink-0">{count}</span>
+              <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">
+                {counts.total ? ((count / counts.total) * 100).toFixed(1) : '0.0'}%
+              </span>
             </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0.0%</span>
-          </div>
-
-          {/* Grade 2 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 2</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100 shadow-inner">
-              <div className="w-1.5 h-full bg-[#EF4444]/40 rounded-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0.0%</span>
-          </div>
-
-          {/* Grade 3 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 3</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-              <div className="bg-gradient-to-r from-[#F87171] via-[#EF4444] to-[#B91C1C] h-full w-[65%] rounded-full shadow-sm shadow-red-500/30 transition-all duration-500"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">1</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">100.0%</span>
-          </div>
-
-          {/* Grade 4 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 4</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100 shadow-inner">
-              <div className="w-1.5 h-full bg-[#EF4444]/40 rounded-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0.0%</span>
-          </div>
+          ))}
         </div>
 
         {/* Bottom Note */}
@@ -653,7 +499,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
                         onClick={() => {
                           if (!draggedFar) {
                             if (onInspectNeedle) {
-                              onInspectNeedle(row);
+                              onInspectNeedle(selectRow(row.source));
                             } else if (onNavigate) {
                               onNavigate('start_monitoring');
                             }
@@ -679,17 +525,8 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
 
         {/* Pagination Footer */}
         <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>Showing 10 of 10 Historical Log</div>
-          <div className="flex items-center gap-1.5">
-            <button className="px-3.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-slate-600 cursor-pointer shadow-2xs">
-              Previous
-            </button>
-            <button className="w-8 h-8 bg-[#1E58E6] text-white font-bold rounded-lg flex items-center justify-center shadow-2xs cursor-pointer">
-              1
-            </button>
-            <button className="w-8 h-8 border border-slate-200 text-slate-600 font-medium rounded-lg flex items-center justify-center bg-white hover:bg-slate-50 shadow-2xs cursor-pointer">
-              2
-            </button>
+          <div>
+            {tracking.loading ? 'กำลังโหลด...' : tracking.error ? <span className="text-red-600">{tracking.error}</span> : `ทั้งหมด ${filteredRows.length} รายการ`}
           </div>
         </div>
       </div>
@@ -745,7 +582,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
                   รายละเอียด PHLEBITIS
                 </h3>
                 <p className="text-[13px] text-slate-500 font-medium mt-0.5">
-                  {selectedPatient.patientName} · {selectedPatient.hnAn || 'HN34567890'} · {selectedPatient.ward || 'PICU'} / ห้อง A-01 / {selectedPatient.bed || 'เตียง A02'}
+                  {selectedPatient.patientName} · {selectedPatient.hnAn} · {selectedPatient.ward} / {selectedPatient.source.patient.room ?? '-'} / {selectedPatient.bed}
                 </p>
               </div>
               <button
@@ -770,7 +607,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
                     ภาวะหลอดเลือดดำอักเสบ
                   </h4>
                   <p className="text-[12px] text-slate-500 font-normal mt-0.5">
-                    ไม่พบข้อสังเกตจากภาพ และได้รับการยืนยันผลแล้ว
+                    {selectedPatient.source.latest_review.finding === 'observation_found' ? `ยืนยันพบข้อสังเกต · Grade ${selectedPatient.source.latest_review.grade}` : 'ยืนยันไม่พบข้อสังเกต'}
                   </p>
                 </div>
               </div>
@@ -778,10 +615,10 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
               <div className="flex flex-col items-start sm:items-end shrink-0">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 text-red-600 border border-red-200/80 rounded-full text-[12px] font-bold">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>รอการทบทวน</span>
+                  <span>{selectedPatient.aiType === 'review' ? 'รอการทบทวนผลล่าสุด' : 'ยืนยันผลแล้ว'}</span>
                 </span>
                 <span className="text-[11px] text-slate-400 font-medium mt-1">
-                  ส่งคิวทบทวน 9 ส.ค. 2569 · 08:10 น.
+                  ยืนยันเมื่อ {fmtDateTime(selectedPatient.source.latest_review.updated_at)}
                 </span>
               </div>
             </div>
@@ -792,7 +629,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
               <div className="space-y-2">
                 <div className="relative rounded-2xl overflow-hidden border border-slate-200 aspect-[4/3] bg-slate-100 shadow-2xs">
                   <img
-                    src="/iv_baseline.png"
+                    src={selectedPatient.source.baseline_image_url ?? '/no-image.svg'}
                     alt="ภาพอ้างอิงเริ่มต้น"
                     className="w-full h-full object-cover"
                   />
@@ -805,7 +642,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
                     ภาพอ้างอิงเริ่มต้น
                   </div>
                   <div className="text-[12px] text-slate-400 font-medium">
-                    9 ส.ค. 2569 · 08:00 น.
+                    {fmtDateTime(selectedPatient.source.started_at)}
                   </div>
                 </div>
               </div>
@@ -814,7 +651,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
               <div className="space-y-2">
                 <div className="relative rounded-2xl overflow-hidden border border-slate-200 aspect-[4/3] bg-slate-100 shadow-2xs">
                   <img
-                    src="/iv_latest.png"
+                    src={selectedPatient.source.latest_analysis?.image_url ?? '/no-image.svg'}
                     alt="ภาพล่าสุด"
                     className="w-full h-full object-cover"
                   />
@@ -827,7 +664,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
                     ภาพล่าสุด
                   </div>
                   <div className="text-[12px] text-slate-400 font-medium">
-                    10 ส.ค. 2569 · 12:05 น.
+                    {fmtDateTime(selectedPatient.source.latest_analysis?.created_at)}
                   </div>
                 </div>
               </div>
@@ -839,7 +676,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
               <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-3.5 space-y-1">
                 <span className="text-slate-400 text-[12px] font-semibold block">Grade</span>
                 <div className="text-xl sm:text-2xl font-extrabold text-[#1E58E6]">
-                  Grade 4
+                  Grade {selectedPatient.source.latest_review.grade}
                 </div>
                 <span className="text-slate-400 text-[11px] font-normal block">
                   บุคลากรทางการแพทย์ยืนยัน
@@ -849,8 +686,8 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
               {/* Metric 2 */}
               <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-3.5 space-y-1">
                 <span className="text-slate-400 text-[12px] font-semibold block">ระดับความเสี่ยง</span>
-                <div className="text-xl sm:text-2xl font-extrabold text-red-600">
-                  สูง
+                <div className="text-xl sm:text-2xl font-extrabold" style={{ color: RISK_COLORS[selectedPatient.source.latest_review.grade] }}>
+                  {riskByGrade[selectedPatient.source.latest_review.grade]}
                 </div>
                 <span className="text-slate-400 text-[11px] font-normal block truncate">
                   ข้อมูลจากผลที่ได้รับการยืนยัน
@@ -861,7 +698,7 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
               <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-3.5 space-y-1">
                 <span className="text-slate-400 text-[12px] font-semibold block">ระดับความเชื่อมั่นของ AI</span>
                 <div className="text-xl sm:text-2xl font-extrabold text-[#1E58E6]">
-                  91%
+                  {selectedPatient.aiConfidence}
                 </div>
                 <span className="text-slate-400 text-[11px] font-normal block">
                   ค่าความมั่นใจของ AI
@@ -885,8 +722,11 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
 
                 {/* Slider Dot Pin */}
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 border-[#EA580C] shadow-md transform -translate-x-1/2"
-                  style={{ left: '62.5%' }}
+                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 shadow-md transform -translate-x-1/2"
+                  style={{
+                    left: `${(Math.max(selectedPatient.source.latest_review.grade, 1) - 0.5) * 25}%`,
+                    borderColor: RISK_COLORS[selectedPatient.source.latest_review.grade]
+                  }}
                 />
               </div>
             </div>
@@ -895,14 +735,14 @@ export const PhlebitisTracking: React.FC<PhlebitisTrackingProps> = ({
             <div className="bg-slate-50/80 border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[13px]">
               <div>
                 <span className="font-bold text-slate-900 block">
-                  ผู้รับผิดชอบ ชื่อ-นามสกุล-ผู้ตรวจ
+                  ผู้รับผิดชอบ {selectedPatient.source.latest_review.reviewer?.full_name ?? '-'}
                 </span>
                 <span className="text-slate-500 font-normal text-[12px]">
-                  เจ้าหน้าที่แผนก - เด็ก
+                  {selectedPatient.source.latest_review.reviewer?.position ?? '-'}
                 </span>
               </div>
               <div className="text-slate-400 font-medium text-[12px]">
-                ตรวจสอบเสร็จตอน 12:05 น.
+                ทบทวนเสร็จ {fmtTime(selectedPatient.source.latest_review.updated_at)}
               </div>
             </div>
 

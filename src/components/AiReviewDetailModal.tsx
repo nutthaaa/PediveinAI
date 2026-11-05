@@ -2,16 +2,19 @@ import React, { useState } from 'react';
 import {
   X,
   AlertTriangle,
-  Clock,
   Eye,
   CheckCircle2,
-  AlertCircle,
   ArrowLeft,
-  Check,
   Droplet,
   Info,
-  Activity
+  Activity,
+  Trash2
 } from 'lucide-react';
+import { api, ApiError } from '../api/client';
+import { useAuth } from '../api/auth';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { fmtDateTime, fmtTime, pct, riskByGrade } from '../api/format';
+import type { Analysis, Condition } from '../api/types';
 
 const infiltrationGradeInfo: Record<number, { title: string; risk: string; desc: string; recommendation: string; riskColor: string }> = {
   1: {
@@ -75,12 +78,21 @@ const phlebitisGradeInfo: Record<number, { title: string; risk: string; desc: st
   }
 };
 
+export interface ReviewModalItem {
+  type: Condition;
+  analysis: Analysis;
+  title?: string;
+  patientName?: string;
+}
+
 interface AiReviewDetailModalProps {
-  item: any;
+  item: ReviewModalItem;
   onClose: () => void;
-  onSaveSuccess?: () => void;
+  onSaveSuccess?: (analysis: Analysis) => void;
   onNavigate?: (nav: string) => void;
   initialStep?: 'overview' | 'form';
+  /** Called after an admin permanently deletes this analysis. */
+  onDeleted?: () => void;
 }
 
 export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
@@ -88,34 +100,79 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
   onClose,
   onSaveSuccess,
   onNavigate,
-  initialStep = 'overview'
+  initialStep = 'overview',
+  onDeleted
 }) => {
+  const { user } = useAuth();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const analysis = item.analysis;
+  const view = analysis.conditions[item.type];
+  const existing = view.review;
   const [step, setStep] = useState<'overview' | 'form'>(initialStep);
-  const [selectedOption, setSelectedOption] = useState<'no_observation' | 'observation_found' | null>('no_observation');
-  const [hasPain, setHasPain] = useState<boolean | null>(true);
-  const [selectedGradeNum, setSelectedGradeNum] = useState<number>(1);
+  const [selectedOption, setSelectedOption] = useState<'no_observation' | 'observation_found' | null>(
+    existing?.finding ?? (view.flagged ? 'observation_found' : 'no_observation')
+  );
+  const [hasPain, setHasPain] = useState<boolean | null>(existing?.has_pain ?? null);
+  const [selectedGradeNum, setSelectedGradeNum] = useState<number>(
+    existing && existing.grade > 0 ? existing.grade : view.ai_grade ?? 1
+  );
+  const [painRaisedGrade, setPainRaisedGrade] = useState(false);
+  // Pain at the IV site means at least Grade 2: a Grade 1 is raised automatically.
+  const choosePain = (pain: boolean) => {
+    setHasPain(pain);
+    if (pain && selectedGradeNum === 1) {
+      setSelectedGradeNum(2);
+      setPainRaisedGrade(true);
+    }
+  };
+  const chooseGrade = (grade: number) => {
+    const raised = hasPain === true && grade === 1;
+    setSelectedGradeNum(raised ? 2 : grade);
+    setPainRaisedGrade(raised);
+  };
+  const [note, setNote] = useState<string>(existing?.note ?? '');
   const [isReviewedChecked, setIsReviewedChecked] = useState(false);
   const [isToastShown, setIsToastShown] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const isPhlebitis = item?.type === 'phlebitis' || item?.title?.toLowerCase().includes('phlebitis');
+  const isPhlebitis = item.type === 'phlebitis';
   const typeName = isPhlebitis ? 'PHLEBITIS' : 'INFILTRATION';
   const thaiName = isPhlebitis ? 'ภาวะหลอดเลือดดำอักเสบ' : 'ภาวะสารน้ำรั่วออกนอกหลอดเลือด';
-  const patientName = item?.patientName || item?.name || 'ชื่อ-นามสกุล-คนไข้';
+  const patientName = analysis.patient.full_name;
+  const shownGrade = existing ? existing.grade : view.ai_grade;
+  const gradeColor = (g: number | null | undefined) =>
+    !g ? '#10B981' : g === 1 ? '#10B981' : g === 2 ? '#F59E0B' : g === 3 ? '#F97316' : '#991B1B';
 
   const currentGradeMap = isPhlebitis ? phlebitisGradeInfo : infiltrationGradeInfo;
   const activeGradeDetail = currentGradeMap[selectedGradeNum] || currentGradeMap[1];
 
-  const handleConfirmSave = () => {
-    if (!selectedOption || !isReviewedChecked) return;
-    setIsToastShown(true);
-    setTimeout(() => {
-      if (onSaveSuccess) onSaveSuccess();
-      if (onNavigate) onNavigate('history');
-      onClose();
-    }, 1200);
+  const handleConfirmSave = async () => {
+    if (!selectedOption || !isReviewedChecked || isSaving) return;
+    setSaveError(null);
+    setIsSaving(true);
+    try {
+      const updated = await api.post<Analysis>(`/api/analyses/${analysis.id}/reviews`, {
+        condition: item.type,
+        finding: selectedOption,
+        grade: selectedOption === 'observation_found' ? selectedGradeNum : 0,
+        has_pain: selectedOption === 'observation_found' ? hasPain : null,
+        note: note.trim() || null
+      });
+      setIsToastShown(true);
+      setTimeout(() => {
+        if (onSaveSuccess) onSaveSuccess(updated);
+        if (onNavigate) onNavigate('history');
+        onClose();
+      }, 1200);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'บันทึกผลการทบทวนไม่สำเร็จ');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const isSaveDisabled = !selectedOption || !isReviewedChecked;
+  const isSaveDisabled = !selectedOption || !isReviewedChecked || isSaving;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
@@ -145,7 +202,7 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
             รายละเอียด {typeName}
           </h2>
           <p className="text-slate-500 text-[13px] mt-1">
-            {patientName} · HN56789012 · PICU / ห้อง A-01 / เตียง C32
+            {patientName} · {analysis.patient.hn} · {analysis.patient.ward} / {analysis.patient.room ?? '-'} / {analysis.patient.bed ?? '-'} · {analysis.site.label} {analysis.site.location}
           </p>
         </div>
 
@@ -164,18 +221,27 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
                 {typeName} · {thaiName}
               </h3>
               <p className="text-[12.5px] text-slate-500 font-normal mt-0.5">
-                ไม่พบข้อสังเกตจากภาพ และได้รับการยืนยันผลแล้ว
+                {view.flagged
+                  ? `AI พบข้อสังเกต · ความน่าจะเป็น ${pct(view.probability)} · AI คาดการณ์ Grade ${view.ai_grade}`
+                  : `AI ไม่พบข้อสังเกตของภาวะนี้ · ความน่าจะเป็น ${pct(view.probability)}`}
               </p>
             </div>
           </div>
 
           <div className="text-right shrink-0 self-start sm:self-auto space-y-1">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 border border-rose-200 text-rose-600 rounded-full text-[12px] font-semibold shadow-2xs">
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-              <span>รอการทบทวน</span>
-            </span>
+            {existing ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full text-[12px] font-semibold shadow-2xs">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>ทบทวนแล้ว · แก้ไขได้</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 border border-rose-200 text-rose-600 rounded-full text-[12px] font-semibold shadow-2xs">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                <span>รอการทบทวน</span>
+              </span>
+            )}
             <div className="text-[11px] text-slate-400 font-normal">
-              ส่งคิวเข้าทบทวน 9 ส.ค. 2569 · 08:10 น.
+              ส่งคิวเข้าทบทวน {fmtDateTime(analysis.created_at)}
             </div>
           </div>
         </div>
@@ -186,7 +252,7 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
           <div>
             <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 group">
               <img
-                src="/iv_baseline.png"
+                src={analysis.previous_image_url ?? analysis.baseline_image_url ?? '/no-image.svg'}
                 alt="Baseline Image"
                 className="w-full h-48 sm:h-52 object-cover"
               />
@@ -195,8 +261,10 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
               </div>
             </div>
             <div className="mt-2 text-left">
-              <div className="text-[14px] font-bold text-slate-900">ภาพอ้างอิงเริ่มต้น</div>
-              <div className="text-[12px] text-slate-400 font-normal">9 ส.ค. 2569 · 08:00 น.</div>
+              <div className="text-[14px] font-bold text-slate-900">
+                {analysis.previous_image_url === analysis.baseline_image_url ? 'ภาพอ้างอิงเริ่มต้น' : 'ภาพรอบก่อนหน้า'}
+              </div>
+              <div className="text-[12px] text-slate-400 font-normal">{fmtDateTime(analysis.previous_taken_at)}</div>
             </div>
           </div>
 
@@ -204,38 +272,17 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
           <div>
             <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 group">
               <img
-                src="/iv_latest.png"
+                src={analysis.image_url}
                 alt="Latest Image"
                 className="w-full h-48 sm:h-52 object-cover"
               />
-              {/* Highlight Circle SVG */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <svg className="w-full h-full" viewBox="0 0 200 200">
-                  <circle
-                    cx="140"
-                    cy="95"
-                    r="26"
-                    fill="none"
-                    stroke={isPhlebitis ? '#1E58E6' : '#EF4444'}
-                    strokeWidth="3.5"
-                    strokeDasharray="4 2"
-                    className="animate-pulse"
-                  />
-                  <circle
-                    cx="140"
-                    cy="95"
-                    r="26"
-                    fill={isPhlebitis ? 'rgba(30, 88, 230, 0.12)' : 'rgba(239, 68, 68, 0.15)'}
-                  />
-                </svg>
-              </div>
               <div className="absolute bottom-3 right-3 px-3 py-1 rounded-full bg-white/85 backdrop-blur-xs text-slate-800 text-[11.5px] font-bold shadow-2xs">
                 ภาพรอบล่าสุด
               </div>
             </div>
             <div className="mt-2 text-left">
               <div className="text-[14px] font-bold text-slate-900">ภาพล่าสุด</div>
-              <div className="text-[12px] text-slate-400 font-normal">10 ส.ค. 2569 · 12:05 น.</div>
+              <div className="text-[12px] text-slate-400 font-normal">{fmtDateTime(analysis.created_at)}</div>
             </div>
           </div>
         </div>
@@ -247,19 +294,23 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-200/80">
                 <span className="text-[12px] text-slate-500 font-medium block">Grade</span>
-                <div className="text-2xl font-bold text-[#1E58E6] mt-1">Grade 0</div>
-                <span className="text-[11px] text-slate-400 font-normal mt-0.5 block">บุคลากรทางการแพทย์ยืนยัน</span>
+                <div className="text-2xl font-bold text-[#1E58E6] mt-1">{shownGrade !== null && shownGrade !== undefined ? `Grade ${shownGrade}` : '-'}</div>
+                <span className="text-[11px] text-slate-400 font-normal mt-0.5 block">
+                  {existing ? 'บุคลากรทางการแพทย์ยืนยัน' : 'AI คาดการณ์ (ทดลอง) · รอยืนยัน'}
+                </span>
               </div>
 
               <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-200/80">
                 <span className="text-[12px] text-slate-500 font-medium block">ระดับความเสี่ยง</span>
-                <div className="text-2xl font-bold text-[#10B981] mt-1">ต่ำ</div>
+                <div className="text-2xl font-bold mt-1" style={{ color: gradeColor(shownGrade) }}>
+                  {shownGrade !== null && shownGrade !== undefined ? riskByGrade[shownGrade] : '-'}
+                </div>
                 <span className="text-[11px] text-slate-400 font-normal mt-0.5 block">ข้อมูลจากผลที่ได้รับการยืนยัน</span>
               </div>
 
               <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-200/80">
                 <span className="text-[12px] text-slate-500 font-medium block">ระดับความเชื่อมั่นของ AI</span>
-                <div className="text-2xl font-bold text-[#1E58E6] mt-1">{item?.confidence || '96%'}</div>
+                <div className="text-2xl font-bold text-[#1E58E6] mt-1">{pct(view.probability)}</div>
                 <span className="text-[11px] text-slate-400 font-normal mt-0.5 block">ค่าความมั่นใจของ AI</span>
               </div>
             </div>
@@ -273,26 +324,47 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
                 <span>วิกฤต</span>
               </div>
               <div className="relative h-2.5 w-full rounded-full bg-slate-100 overflow-hidden flex">
-                <div className="w-1/4 bg-[#10B981] h-full relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 border-[#10B981] shadow-xs" />
-                </div>
+                <div className="w-1/4 bg-[#10B981] h-full" />
                 <div className="w-1/4 bg-[#F59E0B] h-full" />
                 <div className="w-1/4 bg-[#F97316] h-full" />
                 <div className="w-1/4 bg-[#991B1B] h-full" />
+                <div
+                  className="absolute top-1/2 w-4 h-4 rounded-full bg-white border-2 shadow-xs"
+                  style={{
+                    left: `${shownGrade ? (shownGrade - 0.5) * 25 : 12.5}%`,
+                    transform: 'translate(-50%, -50%)',
+                    borderColor: gradeColor(shownGrade)
+                  }}
+                />
               </div>
             </div>
 
             {/* Inspector Details Footer Box */}
             <div className="bg-slate-50/70 rounded-2xl border border-slate-100 p-4 flex items-center justify-between text-[13px]">
               <div>
-                <span className="font-bold text-slate-900 block">ผู้รับผิดชอบ ชื่อ-นามสกุล-ผู้ตรวจ</span>
-                <span className="text-[12px] text-slate-400 font-normal">เจ้าหน้าที่แผนก • เด็ก</span>
+                <span className="font-bold text-slate-900 block">
+                  ผู้รับผิดชอบ {existing?.reviewer?.full_name ?? analysis.assigned_reviewer?.full_name ?? 'ยังไม่ระบุ'}
+                </span>
+                <span className="text-[12px] text-slate-400 font-normal">
+                  {existing ? `ทบทวนเมื่อ ${fmtDateTime(existing.updated_at)}` : analysis.assigned_reviewer ? 'ได้รับมอบหมายให้ทบทวน' : 'รอผู้ทบทวน'}
+                </span>
               </div>
-              <span className="text-[12px] text-slate-400 font-medium">AI ตรวจสอบเสร็จ 12:05 น.</span>
+              <span className="text-[12px] text-slate-400 font-medium">AI ตรวจสอบเสร็จ {fmtTime(analysis.created_at)}</span>
             </div>
 
             {/* Step 1 Action Button */}
-            <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100">
+              {user.role === 'admin' && onDeleted ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-red-600 hover:bg-red-50 font-semibold rounded-xl px-3 py-2 flex items-center gap-1.5 cursor-pointer text-[13px]"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>ลบผลวิเคราะห์นี้</span>
+                </button>
+              ) : (
+                <span />
+              )}
               <button
                 onClick={() => setStep('form')}
                 className="bg-[#1E58E6] hover:bg-blue-700 text-white font-bold rounded-2xl px-6 py-3 shadow-md flex items-center gap-2 transition-all active:scale-95 cursor-pointer text-[14px]"
@@ -302,6 +374,27 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
               </button>
             </div>
           </>
+        )}
+
+        {confirmDelete && (
+          <ConfirmDeleteModal
+            title="ลบผลวิเคราะห์ AI"
+            details={[
+              { label: 'ผู้ป่วย', value: `${analysis.patient.full_name} · ${analysis.patient.hn}` },
+              { label: 'IV Site', value: `${analysis.site.label} · ${analysis.site.location}` },
+              { label: 'รอบ', value: analysis.round ? `รอบ ${analysis.round.round_no}` : '-' },
+              { label: 'วิเคราะห์เมื่อ', value: fmtDateTime(analysis.created_at) },
+              { label: 'สิ่งที่จะถูกลบ', value: 'ภาพ ผล AI และผลทบทวนของภาพนี้' }
+            ]}
+            endpoint={`/api/analyses/${analysis.id}/delete`}
+            confirmText="ลบ"
+            onClose={() => setConfirmDelete(false)}
+            onDeleted={() => {
+              setConfirmDelete(false);
+              onDeleted?.();
+              onClose();
+            }}
+          />
         )}
 
         {/* STEP 2: INTERACTIVE REVIEW FORM SCREEN */}
@@ -402,7 +495,7 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       <button
                         type="button"
-                        onClick={() => setHasPain(true)}
+                        onClick={() => choosePain(true)}
                         className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
                           hasPain === true
                             ? 'border-2 border-[#1E58E6] bg-blue-50/20 text-[#1E58E6] font-bold shadow-2xs'
@@ -416,7 +509,7 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => setHasPain(false)}
+                        onClick={() => choosePain(false)}
                         className={`p-4 rounded-2xl border text-center transition-all cursor-pointer flex items-center justify-center ${
                           hasPain === false
                             ? 'border-2 border-[#1E58E6] bg-blue-50/20 text-[#1E58E6] font-bold shadow-2xs'
@@ -453,7 +546,7 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
                       return (
                         <div
                           key={gNum}
-                          onClick={() => setSelectedGradeNum(gNum)}
+                          onClick={() => chooseGrade(gNum)}
                           className={`rounded-2xl p-4 text-center cursor-pointer transition-all ${
                             isSelected
                               ? 'border-2 border-[#1E58E6] bg-[#EFF6FF] shadow-2xs'
@@ -466,6 +559,12 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
                       );
                     })}
                   </div>
+
+                  {painRaisedGrade && hasPain && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[12.5px] font-medium text-amber-800">
+                      ผู้ป่วยมีอาการปวด ระบบปรับเป็น Grade 2 ให้อัตโนมัติ (มีอาการปวดต้องเป็น Grade 2 ขึ้นไป)
+                    </div>
+                  )}
 
                   {/* Dynamic Risk Bar Indicator */}
                   <div className="space-y-1.5 pt-2">
@@ -534,6 +633,19 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
               </div>
             )}
 
+            <div className="space-y-1.5">
+              <label htmlFor="reviewNote" className="text-[13px] font-semibold text-slate-700 block">
+                หมายเหตุ (ถ้ามี)
+              </label>
+              <textarea
+                id="reviewNote"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={2}
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[13.5px] focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
             {/* Confirmation Checkbox Box */}
             <div className={`rounded-2xl p-4 flex items-center gap-3 transition-colors ${
               isReviewedChecked ? 'bg-blue-50/70 border border-blue-200' : 'bg-white border border-slate-200'
@@ -552,6 +664,10 @@ export const AiReviewDetailModal: React.FC<AiReviewDetailModalProps> = ({
                 ได้ทบทวนภาพอ้างอิง ภาพรอบล่าสุด และผล AI ของ {typeName} แล้ว
               </label>
             </div>
+
+            {saveError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{saveError}</div>
+            )}
 
             {/* Step 2 Footer Buttons */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">

@@ -1,228 +1,122 @@
-import React, { useState } from 'react';
-import {
-  RefreshCw,
-  CheckCircle2,
-  ChevronRight,
-  Shield,
-  Wifi,
-  Network,
-  Share2
-} from 'lucide-react';
+import React from 'react';
+import { Cpu, Database, RefreshCw, ServerCog, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { api } from '../api/client';
+import { useApi } from '../api/useApi';
+import { fmtDateTime } from '../api/format';
+import type { SystemStatus } from '../api/types';
 
 interface HisConnectionStatusProps {
   onNavigate?: (nav: string) => void;
 }
 
-export const HisConnectionStatus: React.FC<HisConnectionStatusProps> = ({ onNavigate }) => {
-  const [isTesting, setIsTesting] = useState(false);
+const tone = (ok: boolean | null) =>
+  ok === null
+    ? { box: 'bg-slate-50 border-slate-200', icon: 'bg-slate-100 text-slate-500', title: 'text-slate-800', text: 'text-slate-500' }
+    : ok
+      ? { box: 'bg-[#E6F9F0] border-[#BBF7D0]', icon: 'bg-[#D1FAE5] text-[#10B981]', title: 'text-[#065F46]', text: 'text-[#059669]' }
+      : { box: 'bg-red-50 border-red-200', icon: 'bg-red-100 text-red-600', title: 'text-red-800', text: 'text-red-600' };
 
-  const handleTestConnection = () => {
-    setIsTesting(true);
-    setTimeout(() => {
-      setIsTesting(false);
-    }, 1000);
-  };
+export const HisConnectionStatus: React.FC<HisConnectionStatusProps> = () => {
+  const status = useApi(() => api.get<SystemStatus>('/api/system/status'), []);
+  const data = status.data;
+
+  const services = [
+    {
+      key: 'db',
+      name: 'ฐานข้อมูล PostgreSQL',
+      icon: Database,
+      ok: data ? data.database === 'UP' : null,
+      detail: data ? (data.database === 'UP' ? 'เชื่อมต่อปกติ' : 'ไม่สามารถเชื่อมต่อฐานข้อมูล') : 'กำลังตรวจสอบ...'
+    },
+    {
+      key: 'ai',
+      name: 'บริการ AI (PediVein inference)',
+      icon: Cpu,
+      ok: data ? data.ai.status === 'READY' : null,
+      detail: !data
+        ? 'กำลังตรวจสอบ...'
+        : data.ai.status === 'READY'
+          ? `พร้อมใช้งาน · ${data.ai.model_version ?? ''} · ${data.ai.provider ?? ''}`
+          : data.ai.status === 'NOT_READY'
+            ? `โหลดโมเดลไม่สำเร็จหรือยังโหลดไม่เสร็จ${data.ai.error ? ` (${data.ai.error})` : ''}`
+            : 'ไม่สามารถเชื่อมต่อบริการ AI · ตรวจสอบว่า backend_ai_cpu ทำงานอยู่'
+    },
+    {
+      key: 'his',
+      name: 'ระบบสารสนเทศโรงพยาบาล (HIS)',
+      icon: ServerCog,
+      ok: data ? (data.his.status === 'NOT_CONFIGURED' ? null : data.his.status === 'UP') : null,
+      detail:
+        data?.his.status === 'NOT_CONFIGURED'
+          ? 'ยังไม่ได้เชื่อมต่อ · ลงทะเบียนผู้ป่วยด้วยตนเองที่หน้า “ผู้ป่วยเด็ก”'
+          : data?.his.status ?? 'กำลังตรวจสอบ...'
+    }
+  ];
+  const allOk = data ? data.database === 'UP' && data.ai.status === 'READY' : null;
+  const banner = tone(allOk);
 
   return (
     <div className="space-y-6">
-      {/* ========================================================================= */}
-      {/* PAGE HEADER ROW                                                           */}
-      {/* ========================================================================= */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-[13px] font-semibold text-[#1E58E6] tracking-tight">
-            การเชื่อมต่อระบบสารสนเทศโรงพยาบาล
-          </span>
-          <h1 className="text-2xl sm:text-[30px] font-bold text-slate-900 tracking-tight mt-0.5">
-            สถานะการเชื่อมต่อ HIS
-          </h1>
-          <p className="text-[13px] text-slate-500 mt-1">
-            HIS เป็นแหล่งข้อมูลหลัก ระบบปรับปรุงหรือสร้างทะเบียนผู้ป่วยเด็กโดยอัตโนมัติและป้องกัน HN ซ้ำ
-          </p>
+          <span className="text-[13px] font-semibold text-[#1E58E6] tracking-tight">การเชื่อมต่อระบบ</span>
+          <h1 className="text-2xl sm:text-[30px] font-bold text-slate-900 tracking-tight mt-0.5">สถานะการเชื่อมต่อระบบ</h1>
+          <p className="text-[13px] text-slate-500 mt-1">ตรวจสอบฐานข้อมูล บริการ AI และการเชื่อมต่อ HIS</p>
         </div>
-
         <button
-          onClick={handleTestConnection}
-          disabled={isTesting}
-          className="flex items-center gap-2 px-4 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white rounded-xl font-medium text-[13px] shadow-xs transition-all active:scale-95 shrink-0 self-start sm:self-auto cursor-pointer"
+          onClick={() => status.reload()}
+          disabled={status.loading}
+          className="flex items-center gap-2 px-4 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white rounded-xl font-medium text-[13px] shadow-xs transition-all cursor-pointer disabled:opacity-70"
         >
-          <RefreshCw className={`w-4 h-4 text-white ${isTesting ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 text-white ${status.loading ? 'animate-spin' : ''}`} />
           <span>ทดสอบการเชื่อมต่อ</span>
         </button>
       </div>
 
-      {/* ========================================================================= */}
-      {/* MAIN SYSTEM CONNECTION STATUS BANNER (FULL WIDTH)                         */}
-      {/* ========================================================================= */}
-      <div className="bg-[#E6F9F0] border border-[#BBF7D0] rounded-2xl p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-11 h-11 rounded-full bg-[#D1FAE5] flex items-center justify-center shrink-0">
-            <Wifi className="w-6 h-6 text-[#10B981]" />
-          </div>
-          <div>
-            <h2 className="text-base sm:text-[18px] font-bold text-[#065F46] leading-tight">
-              ระบบเชื่อมต่อ HIS ตามปกติ
-            </h2>
-            <p className="text-[13px] text-[#059669] font-normal mt-0.5">
-              ข้อมูลล่าสุดเมื่อ 12 วินาทีที่ผ่านมา <span className="mx-1">•</span> ไม่มีข้อมูลค้างส่ง
-            </p>
-          </div>
+      <div className={`border rounded-2xl p-5 shadow-2xs flex items-center gap-4 ${banner.box}`}>
+        <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${banner.icon}`}>
+          {allOk === false ? <WifiOff className="w-6 h-6" /> : <Wifi className="w-6 h-6" />}
         </div>
-
-        <div className="shrink-0 self-start sm:self-auto">
-          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-[#A7F3D0] text-[#047857] rounded-full text-[12px] font-semibold shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
-            <span>พร้อมใช้งาน</span>
-          </span>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 4 HIS COMPONENT STATUS CARDS GRID (2x2 GRID)                             */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Card 1: ADT */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-xl bg-[#E6F9F0] flex items-center justify-center shrink-0 text-[#10B981]">
-              <Network className="w-5 h-5 text-[#10B981]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
-                ข้อมูลการรับไว้รักษาและการจำหน่าย (ADT)
-              </h3>
-              <p className="text-[12px] text-slate-500 font-normal mt-0.5 truncate">
-                HN, AN, การรับไว้รักษา, การย้ายผู้ป่วย และการจำหน่าย
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] rounded-full text-[11px] font-semibold shrink-0">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-            <span>ปกติ</span>
-          </span>
-        </div>
-
-        {/* Card 2: Pediatric Patient Registry */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-xl bg-[#E6F9F0] flex items-center justify-center shrink-0 text-[#10B981]">
-              <Network className="w-5 h-5 text-[#10B981]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
-                ทะเบียนผู้ป่วยแผนกเด็ก
-              </h3>
-              <p className="text-[12px] text-slate-500 font-normal mt-0.5 truncate">
-                หอผู้ป่วย ห้อง และเตียง เฉพาะแผนกเด็ก
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] rounded-full text-[11px] font-semibold shrink-0">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-            <span>ปกติ</span>
-          </span>
-        </div>
-
-        {/* Card 3: Patient Identification */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-xl bg-[#E6F9F0] flex items-center justify-center shrink-0 text-[#10B981]">
-              <Network className="w-5 h-5 text-[#10B981]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
-                ข้อมูลระบุตัวผู้ป่วย
-              </h3>
-              <p className="text-[12px] text-slate-500 font-normal mt-0.5 truncate">
-                ชื่อ วันเดือนปีเกิด เพศ และข้อมูลการแพ้ยา
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] rounded-full text-[11px] font-semibold shrink-0">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-            <span>ปกติ</span>
-          </span>
-        </div>
-
-        {/* Card 4: Results Feedback to HIS */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-xl bg-[#E6F9F0] flex items-center justify-center shrink-0 text-[#10B981]">
-              <Network className="w-5 h-5 text-[#10B981]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
-                การส่งผลกลับ HIS
-              </h3>
-              <p className="text-[12px] text-slate-500 font-normal mt-0.5 truncate">
-                ประวัติการติดตาม ผู้ดำเนินการ เวลาตามกำหนด และเวลาที่ดำเนินการจริง
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-1 px-3 py-1 bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0] rounded-full text-[11px] font-semibold shrink-0">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#10B981]" />
-            <span>ปกติ</span>
-          </span>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* ADMISSION / TRANSFER / DISCHARGE RECENT EVENT LOG CARD                   */}
-      {/* ========================================================================= */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5 min-w-0 flex-1">
-          <div className="w-10 h-10 rounded-xl bg-[#E6F9F0] flex items-center justify-center shrink-0 text-[#10B981]">
-            <Network className="w-5 h-5 text-[#10B981]" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
-              เหตุการณ์รับไว้รักษา ย้ายหอผู้ป่วย และจำหน่ายล่าสุด
-            </h3>
-            <p className="text-[12px] text-slate-500 font-normal mt-0.5">
-              ระบบไม่มีการติดตามหรือย้ายประวัติโดยอัตโนมัติตนกว่าบุคลากรผู้รับผิดชอบจะตรวจสอบ
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={() => onNavigate && onNavigate('alerts')}
-          className="text-[13px] text-[#1E58E6] font-semibold hover:underline flex items-center gap-1 shrink-0 cursor-pointer self-start sm:self-auto"
-        >
-          <span>ดูการแจ้งเตือนที่เกี่ยวข้อง</span>
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* BOTTOM DISCLAIMER BANNER                                                  */}
-      {/* ========================================================================= */}
-      <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex items-center gap-4 text-blue-950">
-        <svg width="44" height="44" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
-          <path
-            d="M22.75 11.375L32.2292 15.1074V22.0391C32.2292 28.4375 28.2006 33.1297 22.75 35.6891C17.2995 33.1297 13.2709 28.4375 13.2709 22.0391V15.1074L22.75 11.375Z"
-            stroke="#0369A1"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M18.6029 23.1054L21.3282 25.5581L27.0157 20.2261"
-            stroke="#0369A1"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <div className="text-[14px]">
-          <div className="font-bold text-blue-900">
-            AI เป็นเครื่องมือสนับสนุนการตรวจสอบภาพ
-          </div>
-          <p className="text-blue-700 mt-0.5">
-            ผล AI ไม่ใช่การวินิจฉัย และทุกการบันทึกต้องได้รับการยืนยันโดยเจ้าหน้าที่
+        <div>
+          <h2 className={`text-base sm:text-[18px] font-bold leading-tight ${banner.title}`}>
+            {status.error
+              ? 'ไม่สามารถติดต่อ backend ได้'
+              : allOk === null
+                ? 'กำลังตรวจสอบ...'
+                : allOk
+                  ? 'ระบบหลักทำงานตามปกติ'
+                  : 'มีบริการที่ไม่พร้อมใช้งาน'}
+          </h2>
+          <p className={`text-[13px] font-normal mt-0.5 ${banner.text}`}>
+            {status.error ?? `ตรวจสอบล่าสุด ${data ? fmtDateTime(data.server_time) : '-'}`}
           </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {services.map(({ key, name, icon: Icon, ok, detail }) => {
+          const t = tone(ok);
+          return (
+            <div key={key} className={`rounded-2xl border p-5 shadow-2xs space-y-3 ${t.box}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${t.icon}`}>
+                <Icon className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className={`text-[15px] font-bold ${t.title}`}>{name}</h3>
+                <p className={`text-[12.5px] mt-1 ${t.text}`}>{detail}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-4 flex items-center gap-4 text-blue-950">
+        <ShieldCheck className="w-8 h-8 text-[#1E58E6] shrink-0" />
+        <div className="text-[14px]">
+          <div className="font-bold text-blue-900">ข้อมูลผู้ป่วยถูกเก็บในฐานข้อมูลของโรงพยาบาล</div>
+          <p className="text-blue-700 mt-0.5 text-[12px]">ภาพ IV Site ถูกส่งไปยังบริการ AI ภายในเท่านั้น และไม่ถูกเก็บไว้ในบริการ AI หลังประมวลผล</p>
         </div>
       </div>
     </div>
   );
 };
-

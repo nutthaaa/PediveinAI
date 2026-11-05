@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import hashlib
 import base64
 import json
+import logging
 import tempfile
 from pathlib import Path
 
@@ -10,22 +10,14 @@ import numpy as np
 import onnxruntime as ort
 from PIL import Image
 
-from . import quality_checker
+from . import quality_checker, registry
 from .preprocessing import FrozenPreprocessor
+from .registry import sha256
 
-ROOT = Path(__file__).resolve().parents[1]
-MODEL = ROOT / "model" / "pedivein_multitask_v2_candidate.onnx"
-EXPECTED_SHA256 = "9974895e27012a3dfd29de80b6ffcf87083e67263aea38d4ebbac8a164c2ce20"
+logger = logging.getLogger(__name__)
+
 MEAN = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
 STD = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def softmax(values: np.ndarray) -> np.ndarray:
@@ -47,14 +39,29 @@ def embed_review_candidates(preprocessing: dict) -> None:
 
 
 class PediveinPredictor:
-    """CPU-only backend runtime. One instance should be reused across requests."""
+    """Backend runtime. One instance should be reused across requests."""
 
     def __init__(self, load_preprocessor: bool = True):
-        actual = sha256(MODEL)
-        if actual != EXPECTED_SHA256:
-            raise RuntimeError(f"Model checksum mismatch: {actual}")
-        self.session = ort.InferenceSession(str(MODEL), providers=["CPUExecutionProvider"])
+        self.model_warning: str | None = None
+        active = registry.get_active()
+        try:
+            self.load_model(active)
+        except Exception as exc:
+            if active == registry.BUILTIN_VERSION:
+                raise
+            # Keep the service usable, but surface the fallback in /health/ready.
+            logger.exception("Active model %s failed to load; falling back to %s", active, registry.BUILTIN_VERSION)
+            self.model_warning = f"Active model {active} failed to load ({exc}); serving {registry.BUILTIN_VERSION}"
+            self.load_model(registry.BUILTIN_VERSION)
         self.preprocessor = FrozenPreprocessor() if load_preprocessor else None
+
+    def load_model(self, version: str) -> None:
+        """Swap the classifier; callers must hold the inference lock while requests are running."""
+        path = registry.verify(version)
+        self.session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        self.model_version = version
+        self.model_status = (registry.metadata(version) or {}).get("status", "EXPERIMENTAL_CANDIDATE")
+        self.model_warning = None
 
     def infer_preprocessed(self, image_path: str | Path) -> dict:
         image = Image.open(image_path).convert("RGB")
@@ -72,7 +79,8 @@ class PediveinPredictor:
             "condition_probabilities": {"INF": float(condition[0]), "PHL": float(condition[1])},
             "grade_prediction": int(np.argmax(grade) + 1),
             "grade_probabilities": {str(i + 1): float(grade[i]) for i in range(4)},
-            "model_status": "EXPERIMENTAL_CANDIDATE",
+            "model_version": self.model_version,
+            "model_status": self.model_status,
             "requires_clinician_confirmation": True,
         }
 

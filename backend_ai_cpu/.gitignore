@@ -6,3 +6,4 @@ output/
 uploads/
 :memory:.ses
 .pytest_cache/
+model_registry/

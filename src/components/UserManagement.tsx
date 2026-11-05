@@ -1,19 +1,25 @@
 import React, { useState } from 'react';
 import {
   UserPlus,
-  Shield,
   Lock,
-  Search,
-  Filter,
   X,
   Check,
-  ChevronLeft,
-  ChevronRight,
-  ShieldCheck,
   UserCheck,
   Eye,
   EyeOff
 } from 'lucide-react';
+import { api, ApiError } from '../api/client';
+import { useApi } from '../api/useApi';
+import type { Role, User } from '../api/types';
+
+// Position shown in the form -> permission role in the backend.
+const POSITION_ROLES: Record<string, Role> = {
+  'พยาบาลวิชาชีพ แผนกเด็ก': 'nurse',
+  'หัวหน้าหอผู้ป่วยเด็ก': 'head_nurse',
+  'กุมารแพทย์ผู้ดูแล': 'doctor',
+  'ผู้ดูแลระบบ': 'admin',
+  'ผู้บริหาร': 'head_nurse'
+};
 
 interface UserItem {
   id: string;
@@ -25,16 +31,16 @@ interface UserItem {
   mfaEnabled: boolean;
   avatarText: string;
   status: 'active' | 'inactive';
+  username?: string;
 }
 
 interface UserManagementProps {
   onNavigate?: (nav: string) => void;
 }
 
-export const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
+export const UserManagement: React.FC<UserManagementProps> = () => {
   const [statusFilter, setStatusFilter] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
 
@@ -49,103 +55,77 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) =>
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [users, setUsers] = useState<UserItem[]>([
-    {
-      id: '1',
-      name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      empCode: 'EMP-0428',
-      email: 'EMP@Bangkokhospital.com',
-      role: 'พยาบาลวิชาชีพ แผนกเด็ก',
-      scope: 'แผนกเด็ก',
-      mfaEnabled: true,
-      avatarText: 'สด',
-      status: 'active'
-    },
-    {
-      id: '2',
-      name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      empCode: 'EMP-0428',
-      email: 'EMP@Bangkokhospital.com',
-      role: 'พยาบาลวิชาชีพ แผนกเด็ก',
-      scope: 'แผนกเด็ก',
-      mfaEnabled: true,
-      avatarText: 'สด',
-      status: 'active'
-    },
-    {
-      id: '3',
-      name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      empCode: 'EMP-0428',
-      email: 'EMP@Bangkokhospital.com',
-      role: 'พยาบาลวิชาชีพ แผนกเด็ก',
-      scope: 'แผนกเด็ก',
-      mfaEnabled: true,
-      avatarText: 'สด',
-      status: 'active'
-    },
-    {
-      id: '4',
-      name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      empCode: 'EMP-0429',
-      email: 'EMP@Bangkokhospital.com',
-      role: 'หัวหน้าหอผู้ป่วยเด็ก',
-      scope: 'แผนกเด็ก',
-      mfaEnabled: true,
-      avatarText: 'สด',
-      status: 'active'
-    },
-    {
-      id: '5',
-      name: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      empCode: 'EMP-0430',
-      email: 'EMP@Bangkokhospital.com',
-      role: 'ผู้ดูแลระบบ',
-      scope: 'Admin',
-      mfaEnabled: true,
-      avatarText: 'สด',
-      status: 'active'
-    },
-    {
-      id: '6',
-      name: 'ชื่อ-นามสกุล-ผู้บริหาร',
-      empCode: 'EMP-0431',
-      email: 'EMP@Bangkokhospital.com',
-      role: 'ผู้บริหาร',
-      scope: 'ทั้งระบบ',
-      mfaEnabled: true,
-      avatarText: 'สด',
-      status: 'active'
-    }
-  ]);
+  const usersQuery = useApi(() => api.get<User[]>('/api/users'), []);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const users: UserItem[] = (usersQuery.data ?? []).map((u) => ({
+    id: String(u.id),
+    name: u.full_name,
+    empCode: u.employee_code,
+    email: u.email ?? '',
+    role: u.position,
+    scope: u.scope,
+    mfaEnabled: u.mfa_enabled,
+    avatarText: u.full_name.substring(0, 2),
+    status: u.is_active ? 'active' : 'inactive',
+    username: u.username
+  }));
+
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!newUserName.trim()) return;
-
-    const newUser: UserItem = {
-      id: Date.now().toString(),
-      name: newUserName,
-      empCode: newUserEmpCode || `EMP-0${Math.floor(100 + Math.random() * 900)}`,
-      email: newUserEmail || `${newUserName.replace(/\s+/g, '')}@Bangkokhospital.com`,
-      role: newUserRole,
-      scope: newUserScope,
-      mfaEnabled: true,
-      avatarText: newUserName.substring(0, 2) || 'สด',
-      status: 'active'
-    };
-
-    setUsers([newUser, ...users]);
+    if (newPassword.length < 8) {
+      setFormError('รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setFormError('รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน');
+      return;
+    }
+    try {
+      await api.post('/api/users', {
+        username: newUserEmpCode.trim(),
+        password: newPassword,
+        full_name: newUserName.trim(),
+        employee_code: newUserEmpCode.trim(),
+        email: newUserEmail.trim() || null,
+        role: POSITION_ROLES[newUserRole] ?? 'nurse',
+        position: newUserRole,
+        scope: newUserScope
+      });
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'เพิ่มผู้ใช้งานไม่สำเร็จ');
+      return;
+    }
+    await usersQuery.reload();
     setIsAddModalOpen(false);
     setNewUserName('');
     setNewUserEmpCode('');
     setNewUserEmail('');
+    setNewPassword('');
+    setConfirmPassword('');
   };
 
-  const handleSaveEditUser = (e: React.FormEvent) => {
+  const handleSaveEditUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
-
-    setUsers(users.map(u => u.id === editingUser.id ? editingUser : u));
+    setFormError(null);
+    try {
+      await api.patch(`/api/users/${editingUser.id}`, {
+        full_name: editingUser.name,
+        employee_code: editingUser.empCode,
+        email: editingUser.email || null,
+        role: POSITION_ROLES[editingUser.role] ?? undefined,
+        position: editingUser.role,
+        scope: editingUser.scope,
+        is_active: editingUser.status === 'active'
+      });
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'บันทึกข้อมูลผู้ใช้งานไม่สำเร็จ');
+      return;
+    }
+    await usersQuery.reload();
     setEditingUser(null);
   };
 
@@ -264,7 +244,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) =>
                 <div>
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#E6F9F0] border border-[#A7F3D0] text-[#047857] rounded-full text-[12px] font-semibold">
                     <Lock className="w-3.5 h-3.5 text-[#10B981]" />
-                    <span>เปิดใช้งานการยืนยันตัวตนหลายปัจจัย (MFA)</span>
+                    <span>
+                      {user.status === 'inactive' ? 'ปิดการใช้งานบัญชี' : user.mfaEnabled ? 'เปิดใช้งานการยืนยันตัวตนหลายปัจจัย (MFA)' : `ชื่อผู้ใช้: ${user.username}`}
+                    </span>
                   </span>
                 </div>
 
@@ -289,38 +271,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) =>
         {/* Pagination Footer */}
         <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[13px] text-slate-500">
           <div>
-            Showing {filteredUsers.length} of {users.length} Historical Log
+            {usersQuery.error ? usersQuery.error : `แสดง ${filteredUsers.length} จาก ${users.length} ผู้ใช้งาน`}
           </div>
 
-          <div className="flex items-center gap-1.5 self-end sm:self-auto">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="px-3 py-1 border border-slate-200 rounded-lg bg-white disabled:opacity-50 text-slate-600 hover:bg-slate-100 transition-colors text-[13px]"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => setCurrentPage(1)}
-              className={`w-7 h-7 rounded-lg font-bold text-[13px] flex items-center justify-center ${
-                currentPage === 1
-                  ? 'bg-[#1E58E6] text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              1
-            </button>
-            <button
-              onClick={() => setCurrentPage(2)}
-              className={`w-7 h-7 rounded-lg font-bold text-[13px] flex items-center justify-center ${
-                currentPage === 2
-                  ? 'bg-[#1E58E6] text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              2
-            </button>
-          </div>
         </div>
       </div>
 
@@ -514,6 +467,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) =>
               </div>
 
               {/* Footer Buttons */}
+              {formError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{formError}</div>
+              )}
               <div className="pt-4 flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -645,7 +601,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) =>
                 </div>
               </div>
 
+              <label className="flex items-center gap-2.5 text-[13.5px] font-medium text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editingUser.status === 'active'}
+                  onChange={(e) => setEditingUser({ ...editingUser, status: e.target.checked ? 'active' : 'inactive' })}
+                  className="w-4 h-4 accent-[#1E58E6]"
+                />
+                <span>เปิดใช้งานบัญชีนี้</span>
+              </label>
+
               {/* Footer Buttons */}
+              {formError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{formError}</div>
+              )}
               <div className="pt-4 flex items-center justify-end gap-3">
                 <button
                   type="button"

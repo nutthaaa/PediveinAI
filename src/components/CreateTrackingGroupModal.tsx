@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, Info, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { X, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { useAuth } from '../api/auth';
 
 interface SelectedPatientItem {
   id: string;
@@ -12,41 +13,29 @@ interface SelectedPatientItem {
 interface CreateTrackingGroupModalProps {
   selectedPatients?: SelectedPatientItem[];
   onClose: (action?: string) => void;
-  onConfirmSuccess?: () => void;
+  onConfirmSuccess?: () => void | Promise<void>;
 }
 
 export const CreateTrackingGroupModal: React.FC<CreateTrackingGroupModalProps> = ({
-  selectedPatients = [
-    {
-      id: '1',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890',
-      room: 'PICU ห้อง 901'
-    },
-    {
-      id: '2',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890',
-      room: 'PICU ห้อง 902'
-    },
-    {
-      id: '3',
-      name: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890',
-      room: 'PICU ห้อง 903'
-    }
-  ],
+  selectedPatients = [],
   onClose,
   onConfirmSuccess
 }) => {
+  const { user } = useAuth();
   const [isToastShown, setIsToastShown] = useState(false);
 
-  const handleConfirm = () => {
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
+    setError(null);
+    try {
+      if (onConfirmSuccess) await onConfirmSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
+      return;
+    }
     setIsToastShown(true);
-    setTimeout(() => {
-      if (onConfirmSuccess) onConfirmSuccess();
-      onClose('confirm_created_group');
-    }, 1000);
+    setTimeout(() => onClose('confirm_created_group'), 1000);
   };
 
   const count = selectedPatients.length;
@@ -64,7 +53,7 @@ export const CreateTrackingGroupModal: React.FC<CreateTrackingGroupModalProps> =
       <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl relative border border-slate-100 max-h-[92vh] overflow-y-auto">
         {/* Close X Button */}
         <button
-          onClick={() => onClose('show_ai_result')}
+          onClick={() => onClose()}
           className="absolute top-6 right-6 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
@@ -130,7 +119,7 @@ export const CreateTrackingGroupModal: React.FC<CreateTrackingGroupModalProps> =
 
           <div className="flex items-center justify-between text-[14px]">
             <span className="text-slate-500 font-medium">ผู้รับผิดชอบ:</span>
-            <span className="text-slate-900 font-bold">ชื่อ-นามสกุล เจ้าหน้าที่</span>
+            <span className="text-slate-900 font-bold">{user.full_name}</span>
           </div>
         </div>
 
@@ -143,9 +132,12 @@ export const CreateTrackingGroupModal: React.FC<CreateTrackingGroupModalProps> =
         </div>
 
         {/* Footer Action Buttons */}
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{error}</div>
+        )}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
-            onClick={onClose}
+            onClick={() => onClose()}
             className="px-6 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-2xl font-bold text-[14px] flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />

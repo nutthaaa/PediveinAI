@@ -4,6 +4,7 @@ import importlib.util
 import math
 import os
 import sys
+import threading
 from pathlib import Path
 
 import cv2
@@ -40,6 +41,7 @@ class FrozenPreprocessor:
     """Single-image adapter around frozen PEDIVEIN_PREPROC_V1.1 helpers."""
 
     def __init__(self):
+        self._lock = threading.Lock()
         self.device = DINO.get_device()
         if not DINO_MODEL.exists() or not SAM2_MODEL.exists():
             raise RuntimeError(
@@ -137,6 +139,11 @@ class FrozenPreprocessor:
         return review
 
     def process(self, image_path: Path, output_path: Path, selected_arm_id: str | None = None):
+        # Shared by /predict and background training; DINO/SAM2 calls are serialized.
+        with self._lock:
+            return self._process(image_path, output_path, selected_arm_id)
+
+    def _process(self, image_path: Path, output_path: Path, selected_arm_id: str | None = None):
         image = Image.open(image_path).convert("RGB")
         rgb = np.asarray(image)
         detections = self.detect(image)

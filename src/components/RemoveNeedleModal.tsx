@@ -1,5 +1,7 @@
-import React from 'react';
-import { X, Activity, Clock, Info } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { api, ApiError } from '../api/client';
+import type { Site, SystemSettings } from '../api/types';
+import { X, Activity, Clock } from 'lucide-react';
 
 const SyringeIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -13,6 +15,7 @@ const SyringeIcon: React.FC<{ className?: string }> = ({ className = "w-6 h-6" }
 );
 
 interface RemoveNeedleModalProps {
+  site?: Site;
   needleNumber?: string;
   location?: string;
   onClose: () => void;
@@ -20,11 +23,44 @@ interface RemoveNeedleModalProps {
 }
 
 export const RemoveNeedleModal: React.FC<RemoveNeedleModalProps> = ({
+  site,
   needleNumber = 'เข็ม #1',
   location = 'หลังมือซ้าย',
   onClose,
   onConfirmSuccess
 }) => {
+  const [reasons, setReasons] = useState<string[]>([]);
+  const [reason, setReason] = useState('');
+  const [postInterval, setPostInterval] = useState(8);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<SystemSettings>('/api/settings')
+      .then((s) => {
+        setReasons(s.removal_reasons);
+        setReason(s.removal_reasons[0] ?? '');
+        setPostInterval(s.post_removal_interval_hours);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const handleConfirm = async () => {
+    if (!reason.trim() || isSaving) return;
+    setError(null);
+    setIsSaving(true);
+    try {
+      if (site) await api.post(`/api/iv-sites/${site.id}/remove`, { reason: reason.trim() });
+      if (onConfirmSuccess) onConfirmSuccess();
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'บันทึกการถอดเข็มไม่สำเร็จ');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fadeIn">
       <div className="bg-white rounded-3xl max-w-[540px] w-full p-6 sm:p-7 space-y-5 shadow-2xl relative border border-slate-100 animate-scaleUp">
@@ -71,22 +107,26 @@ export const RemoveNeedleModal: React.FC<RemoveNeedleModalProps> = ({
 
           <div className="p-3.5 flex items-center justify-between">
             <span className="text-slate-400 font-medium">ช่วงติดตามเดิม</span>
-            <span className="font-extrabold text-slate-900">ทุก 2 ชั่วโมง</span>
+            <span className="font-extrabold text-slate-900">ทุก {site?.interval_hours ?? 2} ชั่วโมง</span>
           </div>
 
           <div className="p-3.5 flex items-center justify-between">
             <span className="text-slate-400 font-medium">ช่วงติดตามหลังถอด</span>
-            <span className="font-extrabold text-slate-900">ทุก 8 ชั่วโมง</span>
+            <span className="font-extrabold text-slate-900">ทุก {postInterval} ชั่วโมง</span>
           </div>
 
           <div className="p-3.5 flex items-center justify-between">
             <span className="text-slate-400 font-medium">เวลาสะสม</span>
-            <span className="font-extrabold text-slate-900">98 / 168 ชั่วโมง · คงเดิม</span>
+            <span className="font-extrabold text-slate-900">
+              {site ? `${Math.floor(site.elapsed_hours)} / ${site.duration_hours}` : '-'} ชั่วโมง · คงเดิม
+            </span>
           </div>
 
           <div className="p-3.5 flex items-center justify-between">
             <span className="text-slate-400 font-medium">รอบปัจจุบัน</span>
-            <span className="font-extrabold text-slate-900">รอบ 49 · นับต่อจากรอบเดิม</span>
+            <span className="font-extrabold text-slate-900">
+              รอบ {site?.next_round?.round_no ?? '-'} · นับต่อจากรอบเดิม
+            </span>
           </div>
         </div>
 
@@ -98,10 +138,38 @@ export const RemoveNeedleModal: React.FC<RemoveNeedleModalProps> = ({
               หลักการนับต่อเนื่อง
             </div>
             <p className="text-[12px] text-[#1E40AF] leading-relaxed font-medium">
-              รอบถัดไปจะเกิดอีก 8 ชั่วโมง ส่วน IV Site ใหม่ที่เพิ่มในผู้ป่วยคนเดิมจะเริ่มรอบที่ 1 และตรวจทุก 2 ชั่วโมงด้วยตารางของตัวเอง
+              รอบถัดไปจะเกิดอีก {postInterval} ชั่วโมง ส่วน IV Site ใหม่ที่เพิ่มในผู้ป่วยคนเดิมจะเริ่มรอบที่ 1 และตรวจทุก 2 ชั่วโมงด้วยตารางของตัวเอง
             </p>
           </div>
         </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[13px] font-semibold text-slate-700 block">เหตุผลการถอดเข็ม</label>
+          <select
+            value={reasons.includes(reason) ? reason : '__other'}
+            onChange={(e) => setReason(e.target.value === '__other' ? '' : e.target.value)}
+            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] focus:outline-none focus:border-[#1E58E6]"
+          >
+            {reasons.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+            <option value="__other">อื่นๆ (ระบุ)</option>
+          </select>
+          {!reasons.includes(reason) && (
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="ระบุเหตุผล"
+              className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-[14px] focus:outline-none focus:border-[#1E58E6]"
+            />
+          )}
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{error}</div>
+        )}
 
         {/* Footer Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">
@@ -112,11 +180,9 @@ export const RemoveNeedleModal: React.FC<RemoveNeedleModalProps> = ({
             ยกเลิก
           </button>
           <button
-            onClick={() => {
-              if (onConfirmSuccess) onConfirmSuccess();
-              onClose();
-            }}
-            className="px-5 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[13.5px] rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+            onClick={handleConfirm}
+            disabled={!reason.trim() || isSaving}
+            className="disabled:opacity-60 px-5 py-2.5 bg-[#1E58E6] hover:bg-blue-700 text-white font-bold text-[13.5px] rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer active:scale-95"
           >
             <Activity className="w-4 h-4 stroke-[2.5]" />
             <span>ยืนยันการถอดเข็ม</span>

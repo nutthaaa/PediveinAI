@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Clock,
   Sparkles,
@@ -12,6 +12,9 @@ import {
 import { BDMSLogo } from './components/BDMSLogo';
 import { Dashboard } from './components/Dashboard';
 import bgHospital from './assets/bg-hospital.png';
+import { api, ApiError, onUnauthorized } from './api/client';
+import { AuthContext } from './api/auth';
+import type { User } from './api/types';
 
 export default function App() {
   const [username, setUsername] = useState('');
@@ -19,20 +22,61 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [loginSuccess, setLoginSuccess] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    onUnauthorized(() => setUser(null));
+    api
+      .get<User>('/api/auth/me')
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setCheckingSession(false));
+    return () => onUnauthorized(null);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    setTimeout(() => {
+    setLoginError(null);
+    try {
+      const result = await api.post<{ user: User }>('/api/auth/login', {
+        username,
+        password,
+        remember_me: rememberMe
+      });
+      setPassword('');
+      setUser(result.user);
+    } catch (err) {
+      setLoginError(err instanceof ApiError ? err.message : 'เข้าสู่ระบบไม่สำเร็จ');
+    } finally {
       setIsLoading(false);
-      setLoginSuccess(true);
-    }, 600);
+    }
   };
 
-  if (loginSuccess) {
-    return <Dashboard onLogout={() => setLoginSuccess(false)} />;
+  const handleLogout = async () => {
+    try {
+      await api.post('/api/auth/logout');
+    } finally {
+      setUser(null);
+    }
+  };
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-[#08192E] text-white">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return (
+      <AuthContext.Provider value={{ user, logout: handleLogout }}>
+        <Dashboard onLogout={handleLogout} />
+      </AuthContext.Provider>
+    );
   }
 
   return (
@@ -206,6 +250,12 @@ export default function App() {
                   ลืมรหัสผ่าน?
                 </a>
               </div>
+
+              {loginError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[14px] font-medium text-red-700">
+                  {loginError}
+                </div>
+              )}
 
               {/* Primary Button: 18px */}
               <button

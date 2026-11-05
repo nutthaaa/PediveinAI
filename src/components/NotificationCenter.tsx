@@ -1,86 +1,61 @@
 import React, { useState } from 'react';
 import {
-  Bell,
   Clock,
   AlertTriangle,
   Sparkles,
-  Wifi,
   Check,
   CheckCircle2,
   ChevronRight
 } from 'lucide-react';
+import { api } from '../api/client';
+import { useApi } from '../api/useApi';
+import { fmtDateTime } from '../api/format';
+import type { Notification } from '../api/types';
 
 interface NotificationCenterProps {
   onMarkAllAsRead?: () => void;
+  onNavigate?: (nav: string) => void;
 }
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({
-  onMarkAllAsRead
+  onMarkAllAsRead,
+  onNavigate
 }) => {
   const [activeTab, setActiveTab] = useState<'due' | 'ai' | 'system'>('due');
   const [readItems, setReadItems] = useState<Record<string, boolean>>({});
 
-  const toggleRead = (id: string) => {
-    setReadItems((prev) => ({ ...prev, [id]: !prev[id] }));
+  const notifications = useApi(() => api.get<Notification[]>('/api/notifications?limit=200'), []);
+
+  const toggleRead = async (id: string) => {
+    if (readItems[id]) return;
+    setReadItems((prev) => ({ ...prev, [id]: true }));
+    await api.post(`/api/notifications/${id}/read`).catch(() => undefined);
+    onMarkAllAsRead?.();
   };
 
-  const notificationItems = [
-    {
-      id: '1',
-      tab: 'due',
-      type: 'due_clock',
-      title: 'ถึงกำหนดตรวจ IV Site',
-      isNew: true,
-      subtitle: 'ชื่อ-นามสกุลคนไข้ • Pediatric 1 / A02 • รอบ 14 / 48 • 14:00 น.',
-      datetime: '10 ส.ค. 2569 • 14:02 น.',
-      iconBg: 'bg-[#FFF7ED] text-[#EA580C]',
-      IconComponent: Clock
-    },
-    {
-      id: '2',
-      tab: 'due',
-      type: 'overdue_alert',
-      title: 'เกินกำหนดตรวจ 18 นาที',
-      isNew: true,
-      subtitle: 'ชื่อ-นามสกุลคนไข้ • PICU / B04 • รอบ 16 / 48',
-      datetime: '10 ส.ค. 2569 • 14:02 น.',
-      iconBg: 'bg-[#FEF2F2] text-[#DC2626]',
-      IconComponent: AlertTriangle
-    },
-    {
-      id: '3',
-      tab: 'ai',
-      type: 'ai_review',
-      title: 'ผล AI สำหรับ Phlebitis รอการทบทวน',
-      isNew: true,
-      subtitle: 'ชื่อ-นามสกุลคนไข้ • Pediatric 1 / A02',
-      datetime: '10 ส.ค. 2569 • 14:00 น.',
-      iconBg: 'bg-[#F3E8FF] text-[#9333EA]',
-      IconComponent: Sparkles
-    },
-    {
-      id: '4',
-      tab: 'system',
-      type: 'his_status',
-      title: 'HIS เชื่อมต่อปกติ',
-      isNew: false,
-      subtitle: 'ปรับปรุงข้อมูลผู้ป่วยเด็กสำเร็จ 128 รายการ • ไม่พบ HN ซ้ำ',
-      datetime: '10 ส.ค. 2569 • 05:30 น.',
-      iconBg: 'bg-[#E6F4EA] text-[#10B981]',
-      IconComponent: Wifi
-    },
-    {
-      id: '5',
-      tab: 'system',
-      type: 'system_info',
-      title: 'ระบบสำรองข้อมูลอัตโนมัติสำเร็จ',
-      isNew: false,
-      subtitle: 'บันทึกประวัติภาพรวม 96 ชั่วโมงประจำวันเรียบร้อยแล้ว',
-      datetime: '10 ส.ค. 2569 • 04:00 น.',
-      iconBg: 'bg-[#EAF2FF] text-[#2563EB]',
-      IconComponent: Bell
-    }
-  ];
+  const markAllRead = async () => {
+    await api.post('/api/notifications/read-all').catch(() => undefined);
+    await notifications.reload();
+    onMarkAllAsRead?.();
+  };
+
+  const notificationItems = (notifications.data ?? []).map((n) => ({
+    id: String(n.id),
+    tab: n.category,
+    link: n.link,
+    read: n.read,
+    title: n.title,
+    isNew: !n.read,
+    subtitle: n.body ?? '',
+    datetime: fmtDateTime(n.created_at),
+    iconBg:
+      n.category === 'due'
+        ? 'bg-[#FEF2F2] text-[#DC2626]'
+        : n.category === 'ai'
+          ? 'bg-[#F3E8FF] text-[#9333EA]'
+          : 'bg-[#EFF6FF] text-[#2563EB]',
+    IconComponent: n.category === 'due' ? AlertTriangle : n.category === 'ai' ? Sparkles : Clock
+  }));
 
   const filteredNotifications = notificationItems.filter(
     (item) => item.tab === activeTab
@@ -107,7 +82,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         </div>
 
         <button
-          onClick={onMarkAllAsRead}
+          onClick={markAllRead}
           className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-medium text-[13px] shadow-2xs flex items-center gap-2 transition-all active:scale-95 shrink-0 self-start sm:self-auto cursor-pointer"
         >
           <CheckCircle2 className="w-4 h-4 text-slate-600" />
@@ -183,7 +158,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         {/* Notifications List */}
         <div className="divide-y divide-slate-100">
           {filteredNotifications.map((item) => {
-            const isRead = readItems[item.id];
+            const isRead = readItems[item.id] || item.read;
             const IconComponent = item.IconComponent;
 
             return (
@@ -235,7 +210,12 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                     <span>{isRead ? 'รับทราบแล้ว' : 'อ่านแล้ว'}</span>
                   </button>
 
-                  <button className="w-9 h-9 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 flex items-center justify-center shadow-2xs cursor-pointer transition-all">
+                  <button
+                    onClick={() => {
+                      toggleRead(item.id);
+                      if (item.link) onNavigate?.(item.link);
+                    }}
+                    className="w-9 h-9 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 flex items-center justify-center shadow-2xs cursor-pointer transition-all">
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>

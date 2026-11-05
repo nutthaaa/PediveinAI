@@ -2,17 +2,15 @@ import React, { useState } from 'react';
 import {
   Search,
   Eye,
-  Filter,
   X,
-  Clock,
-  User,
-  Activity,
-  Sparkles,
-  ShieldCheck,
-  FileText,
-  ChevronLeft,
-  ChevronRight
 } from 'lucide-react';
+import { api, query } from '../api/client';
+import { useApi } from '../api/useApi';
+import { fmtDate, fmtTime } from '../api/format';
+import type { AuditEntry, Paged } from '../api/types';
+
+const PAGE_SIZE = 20;
+const EVENT_TYPES = ['skip', 'ai', 'photo', 'permission', 'complete', 'start'] as const;
 
 interface AuditItem {
   id: string;
@@ -21,7 +19,7 @@ interface AuditItem {
   operator: string;
   event: string;
   eventType: 'skip' | 'ai' | 'photo' | 'permission' | 'complete' | 'start';
-  category: 'schedule' | 'ai' | 'permission';
+  category: 'schedule' | 'ai' | 'permission' | 'system';
   target: string;
   details?: string;
   ipAddress?: string;
@@ -31,112 +29,38 @@ interface AuditLogProps {
   onNavigate?: (nav: string) => void;
 }
 
-export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
+export const AuditLog: React.FC<AuditLogProps> = () => {
   const [activeTab, setActiveTab] = useState<'all' | 'schedule' | 'ai' | 'permission'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAudit, setSelectedAudit] = useState<AuditItem | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const auditLogs: AuditItem[] = [
-    {
-      id: 'LOG-9042',
-      time: '14:05 น.',
-      date: '9 ส.ค. 2569',
-      operator: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      event: 'ข้ามรอบตรวจ: ผู้ป่วยหลับ',
-      eventType: 'skip',
-      category: 'schedule',
-      target: 'HN56789012 · รอบ 14:00 น.',
-      details: 'บันทึกข้ามการตรวจในรอบ 14:00 น. เนื่องจากผู้ป่วยกำลังนอนหลับพักผ่อน ตามแนวทางปฏิบัติแผนกเด็ก',
-      ipAddress: '10.240.12.85'
-    },
-    {
-      id: 'LOG-9041',
-      time: '14:03 น.',
-      date: '9 ส.ค. 2569',
-      operator: 'บริการ AI',
-      event: 'วิเคราะห์ภาพ',
-      eventType: 'ai',
-      category: 'ai',
-      target: 'Infiltration 96% · Phlebitis 94%',
-      details: 'ประมวลผลการวิเคราะห์ภาพถ่าย IV Site ด้วยโมเดล PediVein AI v1.0 พบความเสี่ยง Infiltration 96% และ Phlebitis 94%',
-      ipAddress: '10.240.0.12 (Internal AI Server)'
-    },
-    {
-      id: 'LOG-9040',
-      time: '14:02 น.',
-      date: '9 ส.ค. 2569',
-      operator: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      event: 'บันทึกภาพ IV Site',
-      eventType: 'photo',
-      category: 'schedule',
-      target: 'HN12345678 · รอบ 14 / 48',
-      details: 'อัปโหลดภาพถ่ายตำแหน่ง IV Site หลังมือขวา ผู้ป่วย HN12345678 สำหรับรอบตรวจที่ 14',
-      ipAddress: '10.240.12.85'
-    },
-    {
-      id: 'LOG-9039',
-      time: '13:45 น.',
-      date: '9 ส.ค. 2569',
-      operator: 'ชื่อ-นามสกุล-เจ้าหน้าที่ดูแลระบบ',
-      event: 'แก้ไขสิทธิ์ผู้ใช้งาน',
-      eventType: 'permission',
-      category: 'permission',
-      target: 'EMP-0428 · พยาบาลวิชาชีพ แผนกเด็ก',
-      details: 'ปรับปรุงขอบเขตสิทธิ์การเข้าถึงข้อมูลผู้ป่วยเฉพาะหอผู้ป่วยเด็ก (NICU/PICU) ให้แก่พนักงาน EMP-0428',
-      ipAddress: '10.240.10.11'
-    },
-    {
-      id: 'LOG-9038',
-      time: '12:00 น.',
-      date: '9 ส.ค. 2569',
-      operator: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      event: 'ยืนยันผลการประมวลผล AI',
-      eventType: 'ai',
-      category: 'ai',
-      target: 'HN56789012 · ยืนยันผลปกติ',
-      details: 'เจ้าหน้าที่ยืนยันผลตรวจภาพถ่าย IV Site ไม่พบอาการแทรกซ้อนตรงตามการคาดการณ์ของระบบ',
-      ipAddress: '10.240.12.86'
-    },
-    {
-      id: 'LOG-9037',
-      time: '10:15 น.',
-      date: '9 ส.ค. 2569',
-      operator: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      event: 'เริ่มต้นระยะติดตาม 96 ชม.',
-      eventType: 'start',
-      category: 'schedule',
-      target: 'HN98765432 · หอผู้ป่วย PICU',
-      details: 'เปิดการติดตาม IV Site ผู้ป่วยเด็กรายใหม่ พร้อมถ่ายภาพอ้างอิงเริ่มต้น (Baseline Image)',
-      ipAddress: '10.240.12.85'
-    },
-    {
-      id: 'LOG-9036',
-      time: '08:30 น.',
-      date: '9 ส.ค. 2569',
-      operator: 'ชื่อ-นามสกุลแพทย์-แผนกเด็ก',
-      event: 'ปิดการติดตามครบกำหนด',
-      eventType: 'complete',
-      category: 'schedule',
-      target: 'HN34567890 · ครบ 48 รอบ (96 ชม.)',
-      details: 'สรุปผลรายงานติดตามครบ 96 ชั่วโมง ไร้อาการแทรกซ้อน ถอดสาย IV เรียบร้อย',
-      ipAddress: '10.240.12.88'
-    }
-  ];
+  const logs = useApi(
+    () =>
+      api.get<Paged<AuditEntry>>(
+        `/api/audit-logs${query({ category: activeTab, q: searchQuery, page: currentPage, page_size: PAGE_SIZE })}`
+      ),
+    [activeTab, searchQuery, currentPage]
+  );
+  const totalPages = Math.max(1, Math.ceil((logs.data?.total ?? 0) / PAGE_SIZE));
 
-  const filteredLogs = auditLogs.filter((log) => {
-    if (activeTab !== 'all' && log.category !== activeTab) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        log.operator.toLowerCase().includes(q) ||
-        log.event.toLowerCase().includes(q) ||
-        log.target.toLowerCase().includes(q) ||
-        log.id.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+  const filteredLogs: AuditItem[] = (logs.data?.items ?? []).map((entry) => ({
+    id: entry.code,
+    time: fmtTime(entry.created_at),
+    date: fmtDate(entry.created_at),
+    operator: entry.actor_name,
+    event: entry.event,
+    // review/login map onto the closest badge styles of the original design
+    eventType: (EVENT_TYPES as readonly string[]).includes(entry.event_type)
+      ? (entry.event_type as AuditItem['eventType'])
+      : entry.event_type === 'review'
+        ? 'ai'
+        : 'permission',
+    category: entry.category,
+    target: entry.target ?? '-',
+    details: entry.details ?? undefined,
+    ipAddress: entry.ip_address ?? undefined
+  }));
 
   const getEventBadge = (type: AuditItem['eventType'], eventText: string) => {
     switch (type) {
@@ -208,13 +132,19 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="ค้นหาชื่อ / ผู้ดำเนินการ / เหตุการณ์"
               className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[13px] text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(1);
+                }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-3.5 h-3.5" />
@@ -225,7 +155,10 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
           {/* Filter Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar self-start md:self-auto">
             <button
-              onClick={() => setActiveTab('all')}
+              onClick={() => {
+                setActiveTab('all');
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${
                 activeTab === 'all'
                   ? 'bg-[#1E58E6] text-white shadow-xs'
@@ -235,7 +168,10 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
               ทั้งหมด
             </button>
             <button
-              onClick={() => setActiveTab('schedule')}
+              onClick={() => {
+                setActiveTab('schedule');
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${
                 activeTab === 'schedule'
                   ? 'bg-[#1E58E6] text-white shadow-xs'
@@ -245,7 +181,10 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
               ทางการนัดตรวจ
             </button>
             <button
-              onClick={() => setActiveTab('ai')}
+              onClick={() => {
+                setActiveTab('ai');
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${
                 activeTab === 'ai'
                   ? 'bg-[#1E58E6] text-white shadow-xs'
@@ -255,7 +194,10 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
               วิเคราะห์ด้วย AI
             </button>
             <button
-              onClick={() => setActiveTab('permission')}
+              onClick={() => {
+                setActiveTab('permission');
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${
                 activeTab === 'permission'
                   ? 'bg-[#1E58E6] text-white shadow-xs'
@@ -337,7 +279,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
         {/* Pagination Bar */}
         <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[13px] text-slate-500">
           <div>
-            Showing {filteredLogs.length} of {auditLogs.length} Historical Log
+            {logs.error ? logs.error : `หน้า ${currentPage} / ${totalPages} · ทั้งหมด ${logs.data?.total ?? 0} รายการ`}
           </div>
 
           <div className="flex items-center gap-1.5 self-end sm:self-auto">
@@ -348,25 +290,13 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onNavigate }) => {
             >
               Previous
             </button>
+            <span className="px-2 font-bold text-slate-700">{currentPage}</span>
             <button
-              onClick={() => setCurrentPage(1)}
-              className={`w-7 h-7 rounded-lg font-bold text-[13px] flex items-center justify-center ${
-                currentPage === 1
-                  ? 'bg-[#1E58E6] text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="px-3 py-1 border border-slate-200 rounded-lg bg-white disabled:opacity-50 text-slate-600 hover:bg-slate-100 transition-colors text-[13px]"
             >
-              1
-            </button>
-            <button
-              onClick={() => setCurrentPage(2)}
-              className={`w-7 h-7 rounded-lg font-bold text-[13px] flex items-center justify-center ${
-                currentPage === 2
-                  ? 'bg-[#1E58E6] text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              2
+              Next
             </button>
           </div>
         </div>

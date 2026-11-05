@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "PediVein (docker compose)",
+      "Group": "PediVein",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "pedivein",
+      "Username": "pedivein",
+      "SSLMode": "prefer"
+    }
+  }
+}

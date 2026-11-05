@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { AiReviewDetailModal } from './AiReviewDetailModal';
+import { api } from '../api/client';
+import { useApi } from '../api/useApi';
+import { fmtTime, pct } from '../api/format';
+import { hnAn } from '../api/selection';
+import type { QueueItem } from '../api/types';
 import {
   Search,
   CheckCircle2,
   Sparkles,
   Droplet,
   Eye,
-  X,
-  AlertTriangle,
-  Clock,
-  ShieldCheck
 } from 'lucide-react';
 
 const PhlebitisIcon: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
@@ -24,47 +25,36 @@ interface AiReviewPendingProps {
   onNavigate?: (nav: string) => void;
 }
 
-export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) => {
+export const AiReviewPending: React.FC<AiReviewPendingProps> = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [selectedReviewItem, setSelectedReviewItem] = useState<any | null>(null);
 
-  const reviewItems = [
-    {
-      id: '1',
-      patientName: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      site: 'หลังมือซ้าย',
-      vein: 'Cephalic vein',
-      needleNum: 'เข็ม #1',
-      type: 'infiltration',
-      badgeText: 'Infiltration ควรตรวจสอบ',
-      abnormalStatus: '-ไม่พบความผิดปกติ',
-      isAbnormalTextRed: false,
-      reviewStatus: 'รอตรวจสอบ...',
-      confidence: '96%',
-      time: 'วิเคราะห์เวลา 14:03 น.',
-      buttonText: 'ทบทวน Infiltration'
-    },
-    {
-      id: '2',
-      patientName: 'ชื่อ-นามสกุลคนไข้ A1',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      site: 'หลังมือซ้าย',
-      vein: 'Cephalic vein',
-      needleNum: 'เข็ม #1',
-      type: 'phlebitis',
-      badgeText: 'Phlebitis ควรตรวจสอบ',
-      abnormalStatus: '-พบความผิดปกติ',
-      isAbnormalTextRed: true,
-      reviewStatus: 'รอตรวจสอบ...',
-      confidence: '91%',
-      time: 'วิเคราะห์เวลา 14:03 น.',
-      buttonText: 'ทบทวน Phlebitis'
-    }
-  ];
+  const queue = useApi(() => api.get<QueueItem[]>('/api/analyses/review-queue'), []);
+
+  const reviewItems = (queue.data ?? []).map((q) => {
+    const a = q.analysis;
+    const view = a.conditions[q.condition];
+    const name = q.condition === 'infiltration' ? 'Infiltration' : 'Phlebitis';
+    return {
+      id: q.key,
+      source: q,
+      patientName: a.patient.full_name,
+      hnAn: hnAn(a.patient),
+      hisConfirmed: false,
+      site: a.site.location,
+      vein: a.site.vein,
+      needleNum: a.site.label,
+      type: q.condition,
+      badgeText: view.flagged ? `${name} ควรตรวจสอบ` : `${name} ยืนยันผล`,
+      abnormalStatus: view.flagged ? `-AI พบข้อสังเกต (Grade ${view.ai_grade})` : '-AI ไม่พบข้อสังเกต',
+      isAbnormalTextRed: view.flagged,
+      reviewStatus: a.assigned_reviewer ? `มอบหมาย: ${a.assigned_reviewer.full_name}` : 'รอตรวจสอบ...',
+      confidence: pct(view.probability),
+      time: `วิเคราะห์เวลา ${fmtTime(a.created_at)}`,
+      buttonText: `ทบทวน ${name}`
+    };
+  });
 
   const filteredItems = reviewItems.filter((item) => {
     const matchesSearch =
@@ -104,7 +94,9 @@ export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) 
             <div className="w-10 h-10 rounded-xl bg-[#0086FF] text-white flex items-center justify-center shrink-0 shadow-xs">
               <Droplet className="w-5 h-5 fill-white" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">1</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">
+              {reviewItems.filter((i) => i.type === 'infiltration').length}
+            </div>
           </div>
           <div className="text-right">
             <div className="text-[12px] font-bold text-blue-600 uppercase tracking-wide">
@@ -122,7 +114,9 @@ export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) 
             <div className="w-10 h-10 rounded-xl bg-[#EF4444] text-white flex items-center justify-center shrink-0 shadow-xs">
               <PhlebitisIcon className="w-5 h-5 text-white" />
             </div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">1</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">
+              {reviewItems.filter((i) => i.type === 'phlebitis').length}
+            </div>
           </div>
           <div className="text-right">
             <div className="text-[12px] font-bold text-red-600 uppercase tracking-wide">
@@ -252,17 +246,8 @@ export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) 
 
         {/* Table Pagination Footer */}
         <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <div>Showing 10 of 10 Historical Log</div>
-          <div className="flex items-center gap-1.5">
-            <button className="px-3.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-slate-600 cursor-pointer shadow-2xs">
-              Previous
-            </button>
-            <button className="w-8 h-8 bg-[#1E58E6] text-white font-bold rounded-lg flex items-center justify-center shadow-2xs cursor-pointer">
-              1
-            </button>
-            <button className="w-8 h-8 border border-slate-200 text-slate-600 font-medium rounded-lg flex items-center justify-center bg-white hover:bg-slate-50 shadow-2xs cursor-pointer">
-              2
-            </button>
+          <div>
+            {queue.loading ? 'กำลังโหลด...' : queue.error ? <span className="text-red-600">{queue.error}</span> : `ทั้งหมด ${filteredItems.length} รายการ`}
           </div>
         </div>
       </div>
@@ -298,9 +283,10 @@ export const AiReviewPending: React.FC<AiReviewPendingProps> = ({ onNavigate }) 
       {/* Detail Review Modal Popup */}
       {selectedReviewItem && (
         <AiReviewDetailModal
-          item={selectedReviewItem}
+          item={{ type: selectedReviewItem.source.condition, analysis: selectedReviewItem.source.analysis }}
           onClose={() => setSelectedReviewItem(null)}
-          onNavigate={onNavigate}
+          onSaveSuccess={() => queue.reload()}
+          onDeleted={() => queue.reload()}
         />
       )}
     </div>

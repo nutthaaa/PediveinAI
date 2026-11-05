@@ -10,6 +10,10 @@
 
 คืน `200 READY` เมื่อโมเดลพร้อมรับภาพ หรือ `503 NOT_READY` เมื่อโหลดโมเดลไม่สำเร็จ
 
+### `POST /api/v1/pedivein/quality`
+
+ตรวจคุณภาพภาพอย่างเดียว (ไม่ต้องโหลดโมเดล) รับ `multipart/form-data` field `image` แบบเดียวกับ `/predict` และคืนผลของ `quality_checker.assess` (`status` = `PASS` / `MANUAL_REVIEW` / `RETAKE`, `reasons`, `warnings`, `checks`, `metrics`) ใช้สำหรับหน้าถ่ายภาพ Baseline และตรวจภาพก่อนส่งวิเคราะห์
+
 ### `POST /api/v1/pedivein/predict`
 
 รับ `multipart/form-data`:
@@ -33,6 +37,22 @@ HTTP error สำคัญ:
 - `500`: inference ผิดพลาด
 - `503`: โมเดลยังไม่พร้อม
 
+### Model versions and retraining
+
+ทุก endpoint ด้านล่างใช้ `X-API-Key` แบบเดียวกับ `/predict`
+
+- `GET /api/v1/models`: `{active, loaded, training_running, versions[]}` แต่ละเวอร์ชันมี `state`
+  (`queued` / `preprocessing` / `training` / `evaluating` / `exporting` / `succeeded` / `failed`), `progress`, `message`, `error`, `metadata`
+- `GET /api/v1/models/{version}`: เหมือนข้างบนพร้อม `log` (training log ทั้งหมด)
+- `POST /api/v1/models/{version}/activate`: โหลดเวอร์ชันนั้นมาใช้กับ `/predict` ทันที และจำไว้หลังรีสตาร์ท
+  (`404` ถ้าไม่มีหรือยังเทรนไม่สำเร็จ)
+- `POST /api/v1/training` (`202`): JSON
+  `{version, base_version?, samples: [{image, patient, condition: "INF"|"PHL", grade: 1-4, selected_arm_id?}], epochs?, batch_size?, learning_rate?, test_fraction?, seed?}`
+  `image` เป็น path ที่อยู่ใต้ `PEDIVEIN_UPLOAD_DIR`, `patient` ใช้แยกชุดเทรนกับชุดทดสอบ (`409` ถ้ามีงานเทรนอยู่แล้วหรือชื่อเวอร์ชันซ้ำ)
+
+`metadata` ของเวอร์ชันที่เทรนแล้วมี `test_metrics` และ `base_test_metrics` (`accuracy`, `balanced_accuracy`, `macro_f1`,
+`confusion_matrix` ของ condition และ grade บนชุดทดสอบเดียวกัน), `dataset`, `config`, `history`, `onnx_sha256`
+
 ## Input
 
 - หนึ่ง request ต่อหนึ่งภาพ: JPG, JPEG หรือ PNG
@@ -50,6 +70,7 @@ HTTP error สำคัญ:
   "condition_probabilities": {"INF": 0.72, "PHL": 0.28},
   "grade_prediction": 2,
   "grade_probabilities": {"1": 0.1, "2": 0.6, "3": 0.2, "4": 0.1},
+  "model_version": "PEDIVEIN_MULTITASK_CANDIDATE_V2.0.0",
   "model_status": "EXPERIMENTAL_CANDIDATE",
   "requires_clinician_confirmation": true
 }

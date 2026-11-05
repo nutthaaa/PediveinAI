@@ -1,21 +1,40 @@
 import React, { useState } from 'react';
+import { api, ApiError } from '../api/client';
+import type { Site } from '../api/types';
 import { X, LogOut } from 'lucide-react';
 
 interface EndTrackingModalProps {
+  patientId?: number;
   patientName?: string;
+  sites?: Site[];
+  pendingReviews?: number;
   onClose: () => void;
   onConfirmSuccess?: () => void;
 }
 
 export const EndTrackingModal: React.FC<EndTrackingModalProps> = ({
-  patientName = 'ชื่อ-นามสกุล-คนไข้',
+  patientId,
+  patientName = '-',
+  sites = [],
+  pendingReviews = 0,
   onClose,
   onConfirmSuccess
 }) => {
+  const fullyTracked = sites.filter((site) => site.elapsed_hours >= site.duration_hours).length;
+  const recordedRounds = sites.reduce((sum, site) => sum + site.completed_rounds, 0);
   const [isChecked, setIsChecked] = useState<boolean>(false);
 
-  const handleConfirm = () => {
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
     if (!isChecked) return;
+    setError(null);
+    try {
+      if (patientId) await api.post(`/api/patients/${patientId}/discharge`, {});
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'สิ้นสุดการติดตามไม่สำเร็จ');
+      return;
+    }
     if (onConfirmSuccess) {
       onConfirmSuccess();
     } else {
@@ -67,7 +86,7 @@ export const EndTrackingModal: React.FC<EndTrackingModalProps> = ({
             <span className="text-[11.5px] text-slate-400 font-medium block">
               IV Site ทั้งหมด
             </span>
-            <div className="text-2xl font-extrabold text-slate-900 mt-1">3</div>
+            <div className="text-2xl font-extrabold text-slate-900 mt-1">{sites.length}</div>
             <span className="text-[11px] text-slate-400 font-normal absolute bottom-3.5 right-3.5">
               เข็ม
             </span>
@@ -76,9 +95,9 @@ export const EndTrackingModal: React.FC<EndTrackingModalProps> = ({
           {/* Card 2: ครบ 168 ชั่วโมง */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 relative shadow-2xs">
             <span className="text-[11.5px] text-slate-400 font-medium block">
-              ครบ 168 ชั่วโมง
+              ครบระยะติดตาม
             </span>
-            <div className="text-2xl font-extrabold text-slate-900 mt-1">0</div>
+            <div className="text-2xl font-extrabold text-slate-900 mt-1">{fullyTracked}</div>
             <span className="text-[11px] text-slate-400 font-normal absolute bottom-3.5 right-3.5">
               เข็ม
             </span>
@@ -89,7 +108,7 @@ export const EndTrackingModal: React.FC<EndTrackingModalProps> = ({
             <span className="text-[11.5px] text-slate-400 font-medium block">
               รอบที่บันทึกจริง
             </span>
-            <div className="text-2xl font-extrabold text-slate-900 mt-1">48</div>
+            <div className="text-2xl font-extrabold text-slate-900 mt-1">{recordedRounds}</div>
             <span className="text-[11px] text-slate-400 font-normal absolute bottom-3.5 right-3.5">
               รอบ
             </span>
@@ -100,35 +119,27 @@ export const EndTrackingModal: React.FC<EndTrackingModalProps> = ({
             <span className="text-[11.5px] text-[#059669] font-semibold block">
               ผล AI รอการทบทวน
             </span>
-            <div className="text-2xl font-extrabold text-[#059669] mt-1">0</div>
+            <div className="text-2xl font-extrabold text-[#059669] mt-1">{pendingReviews}</div>
             <span className="text-[11px] text-[#059669] font-medium absolute bottom-3.5 right-3.5">
               รายการ
             </span>
           </div>
         </div>
 
-        {/* 3 IV Site Item Rows */}
+        {/* IV Site rows */}
         <div className="space-y-2.5 pt-1">
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between shadow-2xs text-[13px]">
-            <div className="font-extrabold text-slate-900">เข็ม #1 · หลังมือซ้าย</div>
-            <div className="text-[12.5px] text-slate-400 font-medium">
-              98 / 168 ชั่วโมง · รอบ 49 · ตรวจทุก 2 ชั่วโมง
+          {sites.map((site) => (
+            <div
+              key={site.id}
+              className="bg-white border border-slate-200/90 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-2xs text-[13px]"
+            >
+              <div className="font-extrabold text-slate-900">{site.label} · {site.location}</div>
+              <div className="text-[12.5px] text-slate-400 font-medium">
+                {Math.floor(site.elapsed_hours)} / {site.duration_hours} ชั่วโมง · รอบ {site.next_round?.round_no ?? site.total_rounds} ·
+                ตรวจทุก {site.interval_hours} ชั่วโมง
+              </div>
             </div>
-          </div>
-
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between shadow-2xs text-[13px]">
-            <div className="font-extrabold text-slate-900">เข็ม #2 · หลังมือขวา</div>
-            <div className="text-[12.5px] text-slate-400 font-medium">
-              0 / 168 ชั่วโมง · รอบ 1 · ตรวจทุก 2 ชั่วโมง
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 flex items-center justify-between shadow-2xs text-[13px]">
-            <div className="font-extrabold text-slate-900">เข็ม #3 · หลังมือซ้าย</div>
-            <div className="text-[12.5px] text-slate-400 font-medium">
-              0 / 168 ชั่วโมง · รอบ 1 · ตรวจทุก 2 ชั่วโมง
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Checkbox Confirmation Row */}
@@ -146,10 +157,13 @@ export const EndTrackingModal: React.FC<EndTrackingModalProps> = ({
 
         {/* Light Blue Disclaimer Box */}
         <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-2xl p-3.5 text-[#1E40AF] text-[12.5px] font-medium leading-relaxed">
-          ชั่วโมงจะไม่ถูกปรับให้ครบ 168 และจะไม่มีการสร้างรอบถัดไปหลังบันทึก ประวัติ ภาพ ผล AI และ Grade ยังคงเรียกดูได้
+          ชั่วโมงจะไม่ถูกปรับให้ครบระยะติดตาม และจะไม่มีการสร้างรอบถัดไปหลังบันทึก ประวัติ ภาพ ผล AI และ Grade ยังคงเรียกดูได้
         </div>
 
         {/* Modal Action Buttons Row */}
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">{error}</div>
+        )}
         <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
           <button
             onClick={onClose}

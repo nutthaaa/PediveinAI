@@ -18,6 +18,11 @@ import {
   Lock,
   Check
 } from 'lucide-react';
+import { api, query } from '../api/client';
+import { useApi } from '../api/useApi';
+import { fmtDate, fmtDateTime } from '../api/format';
+import type { ReportSummary } from '../api/types';
+import { Sparkline } from './Sparkline';
 
 interface ExecutiveSummaryProps {
   onNavigate?: (nav: string) => void;
@@ -35,16 +40,61 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
 
+  const report = useApi(() => api.get<ReportSummary>(`/api/reports/summary${query({ range: timeRange })}`), [timeRange]);
+  const r = report.data;
+  const rangeLabel = { today: 'วันนี้', '7d': '7 วันล่าสุด', '30d': '30 วันล่าสุด', '3m': '3 เดือนล่าสุด' }[timeRange];
+  const rangeDates = r ? `${fmtDate(r.from)} – ${fmtDate(r.to)}` : '-';
+  const rate = (value: number | null | undefined) => (value === null || value === undefined ? '-' : `${Math.round(value * 100)}%`);
+  const compliance = r?.compliance_rate ?? null;
+  const highRisk = (cond: 'infiltration' | 'phlebitis') =>
+    r ? r.grade_distribution[cond]['3'] + r.grade_distribution[cond]['4'] : 0;
+  const found = { infiltration: r?.found.infiltration ?? 0, phlebitis: r?.found.phlebitis ?? 0 };
+  const gradeCount = (grade: number) => {
+    const key = String(grade);
+    const inf = gradeFilter === 'phleb' ? 0 : r?.grade_distribution.infiltration[key] ?? 0;
+    const phl = gradeFilter === 'infill' ? 0 : r?.grade_distribution.phlebitis[key] ?? 0;
+    return { inf, phl };
+  };
+  const gradeTotal = gradeFilter === 'infill' ? found.infiltration : gradeFilter === 'phleb' ? found.phlebitis : found.infiltration + found.phlebitis;
+  const roundsTotal = r ? r.rounds.completed + r.rounds.skipped + r.rounds.missed : 0;
+  const barWidth = (value: number) => `${roundsTotal ? Math.round((value / roundsTotal) * 100) : 0}%`;
+  const reviewRate = r && r.analyses_issued ? r.reviews_total / (r.analyses_issued * 2) : null;
+  const issueRate = r && r.analyses_total ? r.analyses_issued / r.analyses_total : null;
+
   const handleExecuteExport = () => {
+    if (!r) return;
     setIsExporting(true);
-    setTimeout(() => {
-      setIsExporting(false);
-      setIsExportModalOpen(false);
-      setExportSuccess(true);
-      setTimeout(() => {
-        setExportSuccess(false);
-      }, 4000);
-    }, 1000);
+    if (exportFormat === 'csv') {
+      const lines = [
+        ['date', 'ai_analyses', 'infiltration_confirmed', 'phlebitis_confirmed'],
+        ...r.daily.map((d) => [d.date, d.analyses, d.infiltration, d.phlebitis]),
+        [],
+        ['metric', 'value'],
+        ['range', r.range],
+        ['analyses_total', r.analyses_total],
+        ['analyses_issued', r.analyses_issued],
+        ['analyses_held', r.analyses_held],
+        ['reviews_total', r.reviews_total],
+        ['ai_agreement_rate', r.ai_agreement_rate ?? ''],
+        ['rounds_completed', r.rounds.completed],
+        ['rounds_skipped', r.rounds.skipped],
+        ['rounds_missed', r.rounds.missed],
+        ['compliance_rate', r.compliance_rate ?? '']
+      ];
+      const csv = '\uFEFF' + lines.map((row) => row.join(',')).join('\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pedivein-report-${r.range}-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } else {
+      setTimeout(() => window.print(), 300);
+    }
+    setIsExporting(false);
+    setIsExportModalOpen(false);
+    setExportSuccess(true);
+    setTimeout(() => setExportSuccess(false), 4000);
   };
 
   return (
@@ -74,10 +124,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
           </div>
           <div>
             <div className="text-[14px] font-bold text-slate-900">
-              ช่วงข้อมูล: 30 วันล่าสุด
+              ช่วงข้อมูล: {rangeLabel}
             </div>
             <div className="text-[12px] text-slate-500 font-medium">
-              12 ก.ค. - 10 ส.ค. 2569 • อัปเดตข้อมูลล่าสุด 10 ส.ค. 2569 เวลา 14:32 น.
+              {rangeDates} • อัปเดตข้อมูลล่าสุด {r ? fmtDateTime(r.to) : '-'}
             </div>
           </div>
         </div>
@@ -141,28 +191,28 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <div className="text-[12px] text-blue-200 font-medium">
-              ข้อมูล ณ วันที่ 10 ส.ค. 2569 เวลา 14:32 น.
+              ข้อมูล ณ {fmtDateTime(r?.to)} · ตั้งแต่ {fmtDate(r?.from)}
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-              ดำเนินการตรวจตรงตามกำหนด <span className="text-[#38BDF8]">92%</span>
+              ดำเนินการตรวจตรงตามกำหนด <span className="text-[#38BDF8]">{rate(compliance)}</span>
             </h2>
             <p className="text-[13px] text-blue-100 font-normal">
-              รอบตรวจหลัก • ตรวจทุก 2 ชั่วโมง • ระยะติดตาม 96 ชั่วโมง
+              รอบตรวจหลัก • ตรวจทุก 2 ชั่วโมง • ระยะติดตาม 168 ชั่วโมง
             </p>
 
             {/* 3 Metric Pills */}
             <div className="pt-2 flex items-center gap-2 flex-wrap text-[12px]">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400/40 text-blue-100 font-semibold backdrop-blur-xs">
                 <CheckCircle2 className="w-3.5 h-3.5 text-blue-300" />
-                <span>มีความครอบคลุม 89.7%</span>
+                <span>AI ออกผลสำเร็จ {rate(issueRate)}</span>
               </div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400/40 text-blue-100 font-semibold backdrop-blur-xs">
                 <Database className="w-3.5 h-3.5 text-blue-300" />
-                <span>ข้อมูล HIS สมบูรณ์ 98%</span>
+                <span>วิเคราะห์ภาพ {r?.analyses_total ?? 0} ครั้ง</span>
               </div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-900/60 border border-blue-400/40 text-blue-100 font-semibold backdrop-blur-xs">
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-300" />
-                <span>ภาพรวมความตรง <span className="text-[#38BDF8] font-bold">92%</span></span>
+                <span>AI สอดคล้องกับผลยืนยัน <span className="text-[#38BDF8] font-bold">{rate(r?.ai_agreement_rate)}</span></span>
               </div>
             </div>
           </div>
@@ -188,11 +238,11 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <Users className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">0</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{r?.sites_started ?? 0}</div>
             <div className="text-[12px] text-slate-500 font-medium mt-1">
-              ผู้ป่วยย้ายหอ/ยกเลิก
+              IV Site เริ่มติดตามใหม่
             </div>
-            <div className="text-[11px] text-slate-400 font-normal">ต่ำสุด 10 คน/วัน</div>
+            <div className="text-[11px] text-slate-400 font-normal">ในช่วงเวลาที่เลือก</div>
           </div>
         </div>
 
@@ -202,11 +252,11 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <FileSpreadsheet className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">0</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{r?.analyses_issued ?? 0}</div>
             <div className="text-[12px] text-slate-500 font-medium mt-1">
-              IV Site ติดตามครบ 168 ชม.
+              ภาพที่ AI ออกผล
             </div>
-            <div className="text-[11px] text-slate-400 font-normal">ส่งออกรายงานผล</div>
+            <div className="text-[11px] text-slate-400 font-normal">ไม่ออกผล {r?.analyses_held ?? 0} ครั้ง (ต้องถ่ายใหม่)</div>
           </div>
         </div>
 
@@ -216,7 +266,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-900 leading-none">0</div>
+            <div className="text-2xl font-bold text-slate-900 leading-none">{r?.reviews_pending ?? 0}</div>
             <div className="text-[12px] text-slate-500 font-medium mt-1">
               ผล AI รอการทบทวน
             </div>
@@ -301,19 +351,19 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="bg-gradient-to-b from-[#0086FF] to-[#005099] text-white rounded-xl p-2.5 text-center shadow-2xs">
                 <div className="text-[11px] opacity-90 font-medium">รายการทั้งหมด</div>
-                <div className="text-xl font-bold">4</div>
+                <div className="text-xl font-bold">{found.infiltration}</div>
               </div>
               <div className="bg-slate-50 rounded-xl p-2.5 text-center border border-slate-200/80">
                 <div className="text-[11px] text-slate-500 font-medium">
                   อยู่ระหว่างเฝ้าระวัง
                 </div>
-                <div className="text-xl font-bold text-slate-800">3</div>
+                <div className="text-xl font-bold text-slate-800">{found.infiltration - highRisk('infiltration')}</div>
               </div>
               <div className="bg-red-50 rounded-xl p-2.5 text-center border border-red-200">
                 <div className="text-[11px] text-red-600 font-semibold">
                   รอยืนยันเร่งด่วน
                 </div>
-                <div className="text-xl font-bold text-red-600">1</div>
+                <div className="text-xl font-bold text-red-600">{highRisk('infiltration')}</div>
               </div>
             </div>
 
@@ -321,29 +371,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <div className="mt-4 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs">
               <div className="flex items-center justify-between text-[13px] mb-1">
                 <span className="font-bold text-slate-800">แนวโน้ม</span>
-                <span className="font-bold text-slate-900">+12.4%</span>
+                <span className="font-bold text-slate-900">{found.infiltration} ราย</span>
               </div>
               <div className="w-full h-12 pt-1">
-                <svg className="w-full h-full" viewBox="0 0 250 45" preserveAspectRatio="none" fill="none">
-                  <defs>
-                    <linearGradient id="exec-infill-trend-grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0070F3" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#0070F3" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M 0,35 L 45,32 L 90,34 L 145,22 L 195,28 L 250,10 L 250,45 L 0,45 Z"
-                    fill="url(#exec-infill-trend-grad)"
-                  />
-                  <path
-                    d="M 0,35 L 45,32 L 90,34 L 145,22 L 195,28 L 250,10"
-                    stroke="#0070F3"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="250" cy="10" r="3.5" fill="#0070F3" />
-                </svg>
+                <Sparkline values={(r?.daily ?? []).map((d) => d.infiltration)} color="#0070F3" id="exec-inf-trend" />
               </div>
             </div>
           </div>
@@ -351,10 +382,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
           {/* Bottom Footer Link */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[12px]">
             <span className="text-slate-500 font-medium">
-              รายงานตรวจที่ประเมินเป็นเร่งด่วนแรก
+              เรียงรายการเร่งด่วนก่อน
             </span>
             <button className="text-blue-600 font-semibold hover:underline flex items-center gap-1 cursor-pointer">
-              <span>ชื่อ-นามสกุลคนไข้ • ผล AI รอการทบทวน</span>
+              <span>ดูรายการทั้งหมด</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -426,19 +457,19 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <div className="grid grid-cols-3 gap-2 mt-4">
               <div className="bg-gradient-to-b from-[#0086FF] to-[#005099] text-white rounded-xl p-2.5 text-center shadow-2xs">
                 <div className="text-[11px] opacity-90 font-medium">รายการทั้งหมด</div>
-                <div className="text-xl font-bold">4</div>
+                <div className="text-xl font-bold">{found.phlebitis}</div>
               </div>
               <div className="bg-slate-50 rounded-xl p-2.5 text-center border border-slate-200/80">
                 <div className="text-[11px] text-slate-500 font-medium">
                   อยู่ระหว่างเฝ้าระวัง
                 </div>
-                <div className="text-xl font-bold text-slate-800">3</div>
+                <div className="text-xl font-bold text-slate-800">{found.phlebitis - highRisk('phlebitis')}</div>
               </div>
               <div className="bg-red-50 rounded-xl p-2.5 text-center border border-red-200">
                 <div className="text-[11px] text-red-600 font-semibold">
                   รอยืนยันเร่งด่วน
                 </div>
-                <div className="text-xl font-bold text-red-600">1</div>
+                <div className="text-xl font-bold text-red-600">{highRisk('phlebitis')}</div>
               </div>
             </div>
 
@@ -446,29 +477,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <div className="mt-4 bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs">
               <div className="flex items-center justify-between text-[13px] mb-1">
                 <span className="font-bold text-slate-800">แนวโน้ม</span>
-                <span className="font-bold text-slate-900">+8.7%</span>
+                <span className="font-bold text-slate-900">{found.phlebitis} ราย</span>
               </div>
               <div className="w-full h-12 pt-1">
-                <svg className="w-full h-full" viewBox="0 0 250 45" preserveAspectRatio="none" fill="none">
-                  <defs>
-                    <linearGradient id="exec-phleb-trend-grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#DC2626" stopOpacity="0.4" />
-                      <stop offset="100%" stopColor="#DC2626" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-                  <path
-                    d="M 0,35 L 50,31 L 90,33 L 140,20 L 190,26 L 250,12 L 250,45 L 0,45 Z"
-                    fill="url(#exec-phleb-trend-grad)"
-                  />
-                  <path
-                    d="M 0,35 L 50,31 L 90,33 L 140,20 L 190,26 L 250,12"
-                    stroke="#DC2626"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="250" cy="12" r="3.5" fill="#DC2626" />
-                </svg>
+                <Sparkline values={(r?.daily ?? []).map((d) => d.phlebitis)} color="#DC2626" id="exec-phl-trend" />
               </div>
             </div>
           </div>
@@ -476,10 +488,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
           {/* Bottom Footer Link */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[12px]">
             <span className="text-slate-500 font-medium">
-              รายงานตรวจที่ประเมินเป็นเร่งด่วนแรก
+              เรียงรายการเร่งด่วนก่อน
             </span>
             <button className="text-red-600 font-semibold hover:underline flex items-center gap-1 cursor-pointer">
-              <span>ชื่อ-นามสกุลคนไข้ • ผล AI รอการทบทวน</span>
+              <span>ดูรายการทั้งหมด</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -518,7 +530,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
               <span>รวม</span>
               <span className={`font-extrabold text-[11px] px-1.5 py-0.5 rounded-md leading-none ${gradeFilter === 'all' ? 'bg-white text-[#1E58E6]' : 'bg-slate-200/80 text-slate-600'
                 }`}>
-                2
+                {found.infiltration + found.phlebitis}
               </span>
             </button>
 
@@ -532,7 +544,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
               <span>Infiltration</span>
               <span className={`font-extrabold text-[11px] px-1.5 py-0.5 rounded-md leading-none ${gradeFilter === 'infill' ? 'bg-white text-[#1E58E6]' : 'bg-slate-200/80 text-slate-600'
                 }`}>
-                1
+                {found.infiltration}
               </span>
             </button>
 
@@ -546,7 +558,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
               <span>Phlebitis</span>
               <span className={`font-extrabold text-[11px] px-1.5 py-0.5 rounded-md leading-none ${gradeFilter === 'phleb' ? 'bg-white text-[#1E58E6]' : 'bg-slate-200/80 text-slate-600'
                 }`}>
-                1
+                {found.phlebitis}
               </span>
             </button>
           </div>
@@ -555,7 +567,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
         {/* Total Count & Legend Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pt-1">
           <div>
-            <div className="text-4xl font-extrabold text-slate-900 leading-none">2</div>
+            <div className="text-4xl font-extrabold text-slate-900 leading-none">{gradeTotal}</div>
             <div className="text-[12px] text-slate-500 font-medium mt-1">
               รายการที่ได้รับการยืนยันแล้ว · ทุกหมวด
             </div>
@@ -576,47 +588,27 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
 
         {/* Grade Bars Stack */}
         <div className="space-y-3.5 pt-1">
-          {/* Grade 1 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 1</span>
-            <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100">
-              <div className="bg-[#0EA5E9] h-full w-[50%] rounded-full transition-all duration-500"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">1</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">50.0%</span>
-          </div>
-
-          {/* Grade 2 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 2</span>
-            <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100">
-              <div className="w-1 h-full bg-[#0EA5E9] rounded-l-full shrink-0"></div>
-              <div className="w-1 h-full bg-[#EF4444] rounded-r-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0%</span>
-          </div>
-
-          {/* Grade 3 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 3</span>
-            <div className="flex-1 bg-[#F1F5F9] h-4 rounded-full overflow-hidden flex p-0.5 border border-slate-100">
-              <div className="bg-[#EF4444] h-full w-[50%] rounded-full transition-all duration-500"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">1</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">50.0%</span>
-          </div>
-
-          {/* Grade 4 */}
-          <div className="flex items-center gap-3 text-[13px]">
-            <span className="w-16 font-medium text-slate-700 shrink-0">Grade 4</span>
-            <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex items-center p-0.5 border border-slate-100">
-              <div className="w-1 h-full bg-[#0EA5E9] rounded-l-full shrink-0"></div>
-              <div className="w-1 h-full bg-[#EF4444] rounded-r-full shrink-0"></div>
-            </div>
-            <span className="w-6 font-bold text-slate-900 text-right shrink-0">0</span>
-            <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">0%</span>
-          </div>
+          {[1, 2, 3, 4].map((grade) => {
+            const count = gradeCount(grade);
+            const total = count.inf + count.phl;
+            return (
+              <div key={grade} className="flex items-center gap-3 text-[13px]">
+                <span className="w-16 font-medium text-slate-700 shrink-0">Grade {grade}</span>
+                <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100">
+                  {count.inf > 0 && (
+                    <div className="bg-[#0EA5E9] h-full rounded-full transition-all duration-500" style={{ width: `${(count.inf / gradeTotal) * 100}%` }}></div>
+                  )}
+                  {count.phl > 0 && (
+                    <div className="bg-[#EF4444] h-full rounded-full transition-all duration-500" style={{ width: `${(count.phl / gradeTotal) * 100}%` }}></div>
+                  )}
+                </div>
+                <span className="w-6 font-bold text-slate-900 text-right shrink-0">{total}</span>
+                <span className="w-12 text-[12px] text-slate-500 text-right shrink-0">
+                  {gradeTotal ? ((total / gradeTotal) * 100).toFixed(1) : '0.0'}%
+                </span>
+              </div>
+            );
+          })}
         </div>
 
         {/* Bottom Footer Note & Action */}
@@ -650,7 +642,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
                   ความตรงต่อเวลาของรอบตรวจ
                 </h3>
                 <p className="text-[12px] text-slate-500 font-normal mt-0.5">
-                  คำนวณตามรอบตรวจทุก 2 ชั่วโมงตลอดระยะติดตาม 96 ชั่วโมง
+                  คำนวณตามรอบตรวจทุก 2 ชั่วโมงตลอดระยะติดตาม 168 ชั่วโมง
                 </p>
               </div>
             </div>
@@ -683,7 +675,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
                   />
                   <path
                     stroke="url(#exec-donut-gradient)"
-                    strokeDasharray="92, 100"
+                    strokeDasharray={`${Math.round((compliance ?? 0) * 100)}, 100`}
                     strokeWidth="4"
                     strokeLinecap="round"
                     fill="none"
@@ -692,10 +684,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                   <span className="text-3xl font-extrabold text-slate-900 leading-none">
-                    92%
+                    {rate(compliance)}
                   </span>
                   <span className="text-[10px] font-semibold text-slate-400 mt-1">
-                    คำนวณจากทั้งหมด
+                    ตรวจตรงรอบ
                   </span>
                 </div>
               </div>
@@ -705,34 +697,34 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <div className="sm:col-span-7 space-y-3 text-[13px]">
               <div className="flex items-center gap-3">
                 <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                  <div className="bg-gradient-to-r from-[#EF4444] to-[#892727] h-full w-[25%] rounded-full shadow-2xs"></div>
+                  <div className="bg-gradient-to-r from-[#EF4444] to-[#892727] h-full rounded-full shadow-2xs" style={{ width: barWidth(r?.rounds.missed ?? 0) }}></div>
                 </div>
-                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">เกินกำหนด</span>
-                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">3</span>
+                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ไม่ได้ตรวจตามรอบ</span>
+                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{r?.rounds.missed ?? 0}</span>
               </div>
 
               <div className="flex items-center gap-3">
                 <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                  <div className="bg-gradient-to-r from-[#F97316] to-[#C2410C] h-full w-[45%] rounded-full shadow-2xs"></div>
+                  <div className="bg-gradient-to-r from-[#F97316] to-[#C2410C] h-full rounded-full shadow-2xs" style={{ width: barWidth(r?.rounds.skipped ?? 0) }}></div>
                 </div>
-                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ครบกำหนดตรวจวันนี้</span>
-                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">7</span>
+                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ข้ามรอบ</span>
+                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{r?.rounds.skipped ?? 0}</span>
               </div>
 
               <div className="flex items-center gap-3">
                 <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                  <div className="bg-gradient-to-r from-[#A855F7] to-[#633291] h-full w-[65%] rounded-full shadow-2xs"></div>
+                  <div className="bg-gradient-to-r from-[#A855F7] to-[#633291] h-full rounded-full shadow-2xs" style={{ width: barWidth(roundsTotal) }}></div>
                 </div>
-                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">รอดำเนินการ</span>
-                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">18</span>
+                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">รอบที่ถึงกำหนด</span>
+                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{roundsTotal}</span>
               </div>
 
               <div className="flex items-center gap-3">
                 <div className="flex-1 bg-[#F1F5F9] h-3.5 rounded-full overflow-hidden flex p-0.5 border border-slate-100 shadow-inner">
-                  <div className="bg-gradient-to-r from-[#22C55E] to-[#14532D] h-full w-[85%] rounded-full shadow-2xs"></div>
+                  <div className="bg-gradient-to-r from-[#22C55E] to-[#14532D] h-full rounded-full shadow-2xs" style={{ width: barWidth(r?.rounds.completed ?? 0) }}></div>
                 </div>
-                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ดำเนินการครบถ้วน</span>
-                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">42</span>
+                <span className="text-slate-600 font-medium shrink-0 text-[12px] min-w-[100px] text-right">ตรวจแล้ว</span>
+                <span className="font-bold text-slate-900 shrink-0 w-5 text-right">{r?.rounds.completed ?? 0}</span>
               </div>
             </div>
           </div>
@@ -764,11 +756,11 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             {/* Bar 1: ข้อมูล HIS สมบูรณ์ */}
             <div className="space-y-1">
               <div className="flex justify-between items-center text-[12px]">
-                <span className="font-semibold text-slate-700">ข้อมูล HIS สมบูรณ์</span>
-                <span className="font-bold text-slate-900">98%</span>
+                <span className="font-semibold text-slate-700">AI ออกผลได้ (ภาพผ่านเกณฑ์)</span>
+                <span className="font-bold text-slate-900">{rate(issueRate)}</span>
               </div>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden p-0.5 border border-slate-100">
-                <div className="bg-gradient-to-r from-[#10B981] to-[#047857] h-full w-[98%] rounded-full shadow-2xs"></div>
+                <div className="bg-gradient-to-r from-[#10B981] to-[#047857] h-full rounded-full shadow-2xs" style={{ width: rate(issueRate) === '-' ? '0%' : rate(issueRate) }}></div>
               </div>
             </div>
 
@@ -776,10 +768,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <div className="space-y-1">
               <div className="flex justify-between items-center text-[12px]">
                 <span className="font-semibold text-slate-700">การบันทึกการติดตาม</span>
-                <span className="font-bold text-slate-900">92%</span>
+                <span className="font-bold text-slate-900">{rate(compliance)}</span>
               </div>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden p-0.5 border border-slate-100">
-                <div className="bg-gradient-to-r from-[#0EA5E9] to-[#0284C7] h-full w-[92%] rounded-full shadow-2xs"></div>
+                <div className="bg-gradient-to-r from-[#0EA5E9] to-[#0284C7] h-full rounded-full shadow-2xs" style={{ width: rate(compliance) === '-' ? '0%' : rate(compliance) }}></div>
               </div>
             </div>
 
@@ -787,10 +779,10 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
             <div className="space-y-1">
               <div className="flex justify-between items-center text-[12px]">
                 <span className="font-semibold text-slate-700">ผล AI ได้รับการทบทวน</span>
-                <span className="font-bold text-slate-900">77%</span>
+                <span className="font-bold text-slate-900">{rate(reviewRate)}</span>
               </div>
               <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden p-0.5 border border-slate-100">
-                <div className="bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] h-full w-[77%] rounded-full shadow-2xs"></div>
+                <div className="bg-gradient-to-r from-[#8B5CF6] to-[#6D28D9] h-full rounded-full shadow-2xs" style={{ width: rate(reviewRate) === '-' ? '0%' : rate(reviewRate) }}></div>
               </div>
             </div>
           </div>
@@ -827,83 +819,31 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200 text-[12px] font-semibold text-slate-500">
-                <th className="py-2.5 px-3">ช่วงเวลา</th>
-                <th className="py-2.5 px-3">ผู้ป่วยได้รับการประเมิน</th>
-                <th className="py-2.5 px-3">ตรงตามกำหนด</th>
-                <th className="py-2.5 px-3">อัตราตรงเวลา</th>
+                <th className="py-2.5 px-3">วันที่</th>
+                <th className="py-2.5 px-3">AI วิเคราะห์</th>
+                <th className="py-2.5 px-3">ยืนยัน Infiltration</th>
+                <th className="py-2.5 px-3">ยืนยัน Phlebitis</th>
                 <th className="py-2.5 px-3">ผล AI รอการทบทวน</th>
                 <th className="py-2.5 px-3">แนวโน้ม</th>
                 <th className="py-2.5 px-3 text-right">การดำเนินการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-[13px]">
-              {/* Row 1 */}
-              <tr className="hover:bg-slate-50/70 transition-colors">
-                <td className="py-3 px-3 font-bold text-slate-900">
-                  1-10 ส.ค. 2569
-                </td>
-                <td className="py-3 px-3 text-slate-600">46 ราย</td>
-                <td className="py-3 px-3 text-slate-600">41 ราย</td>
-                <td className="py-3 px-3 font-bold text-[#1E58E6]">92%</td>
-                <td className="py-3 px-3 text-slate-600">5 รายการ</td>
-                <td className="py-3 px-3 font-bold text-emerald-600">+2.4%</td>
-                <td className="py-3 px-3 text-right">
-                  <button className="px-3 py-1 bg-[#1E58E6] hover:bg-blue-700 text-white rounded-lg font-semibold text-[12px] transition-all shadow-2xs cursor-pointer">
-                    ส่งออก
-                  </button>
-                </td>
-              </tr>
-
-              {/* Row 2 */}
-              <tr className="hover:bg-slate-50/70 transition-colors">
-                <td className="py-3 px-3 font-bold text-slate-900">
-                  ก.ค. 2569
-                </td>
-                <td className="py-3 px-3 text-slate-600">133 ราย</td>
-                <td className="py-3 px-3 text-slate-600">118 ราย</td>
-                <td className="py-3 px-3 font-bold text-[#1E58E6]">90%</td>
-                <td className="py-3 px-3 text-slate-600">18 รายการ</td>
-                <td className="py-3 px-3 font-bold text-emerald-600">+3.2%</td>
-                <td className="py-3 px-3 text-right">
-                  <button className="px-3 py-1 bg-[#1E58E6] hover:bg-blue-700 text-white rounded-lg font-semibold text-[12px] transition-all shadow-2xs cursor-pointer">
-                    ส่งออก
-                  </button>
-                </td>
-              </tr>
-
-              {/* Row 3 */}
-              <tr className="hover:bg-slate-50/70 transition-colors">
-                <td className="py-3 px-3 font-bold text-slate-900">
-                  มิ.ย. 2569
-                </td>
-                <td className="py-3 px-3 text-slate-600">121 ราย</td>
-                <td className="py-3 px-3 text-slate-600">105 ราย</td>
-                <td className="py-3 px-3 font-bold text-[#1E58E6]">87%</td>
-                <td className="py-3 px-3 text-slate-600">22 รายการ</td>
-                <td className="py-3 px-3 font-bold text-emerald-600">+1.1%</td>
-                <td className="py-3 px-3 text-right">
-                  <button className="px-3 py-1 bg-[#1E58E6] hover:bg-blue-700 text-white rounded-lg font-semibold text-[12px] transition-all shadow-2xs cursor-pointer">
-                    ส่งออก
-                  </button>
-                </td>
-              </tr>
-
-              {/* Row 4 */}
-              <tr className="hover:bg-slate-50/70 transition-colors">
-                <td className="py-3 px-3 font-bold text-slate-900">
-                  พ.ค. 2569
-                </td>
-                <td className="py-3 px-3 text-slate-600">116 ราย</td>
-                <td className="py-3 px-3 text-slate-600">101 ราย</td>
-                <td className="py-3 px-3 font-bold text-[#1E58E6]">86%</td>
-                <td className="py-3 px-3 text-slate-600">24 รายการ</td>
-                <td className="py-3 px-3 text-slate-400 font-medium">ฐานเปรียบเทียบ</td>
-                <td className="py-3 px-3 text-right">
-                  <button className="px-3 py-1 bg-[#1E58E6] hover:bg-blue-700 text-white rounded-lg font-semibold text-[12px] transition-all shadow-2xs cursor-pointer">
-                    ส่งออก
-                  </button>
-                </td>
-              </tr>
+              {(r?.daily ?? []).slice(-7).reverse().map((d) => (
+                <tr key={d.date} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="py-3 px-3 font-semibold text-slate-900">{fmtDate(d.date)}</td>
+                  <td className="py-3 px-3 text-slate-600">{d.analyses} ภาพ</td>
+                  <td className="py-3 px-3 text-slate-600">{d.infiltration} ราย</td>
+                  <td className="py-3 px-3 text-slate-600">{d.phlebitis} ราย</td>
+                  <td className="py-3 px-3 text-slate-600">-</td>
+                  <td className="py-3 px-3 text-slate-400">-</td>
+                  <td className="py-3 px-3 text-right">
+                    <button onClick={() => onNavigate?.('history')} className="text-[#1E58E6] font-semibold hover:underline cursor-pointer">
+                      ดูประวัติ
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -967,7 +907,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
                   ส่งออกรายงาน
                 </h3>
                 <p className="text-[13px] text-slate-500 font-normal mt-0.5">
-                  รายงานสรุปภาพรวม PediVeinCare AI · 30 วันล่าสุด · 12 ก.ค.–10 ส.ค. 2569
+                  รายงานสรุปภาพรวม PediVeinCare AI · {rangeLabel} · {rangeDates}
                 </p>
               </div>
               <button
@@ -988,7 +928,7 @@ export const ExecutiveSummary: React.FC<ExecutiveSummaryProps> = ({ onNavigate }
                   รายงานที่จะส่งออก
                 </span>
                 <span className="text-[13px] font-bold text-[#1E58E6] leading-snug">
-                  รายงานสรุปภาพรวม PediVeinCare AI · 30 วันล่าสุด · 12 ก.ค.–10 ส.ค. 2569
+                  รายงานสรุปภาพรวม PediVeinCare AI · {rangeLabel} · {rangeDates}
                 </span>
               </div>
             </div>

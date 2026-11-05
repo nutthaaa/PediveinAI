@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { PatientRoundsHistory } from './PatientRoundsHistory';
 import { SinglePatientDetail } from './SinglePatientDetail';
 import {
   FileText,
@@ -8,17 +7,29 @@ import {
   ArrowLeft,
   User,
   Home,
-  Clock,
   RotateCcw,
   CheckCircle2,
   Search,
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
+import { api } from '../api/client';
+import { useApi } from '../api/useApi';
+import { fmtDateTime } from '../api/format';
+import { hnAn } from '../api/selection';
+import type { CompletedRow } from '../api/types';
 
 interface CompletedTrackingProps {
   onNavigate?: (nav: string) => void;
 }
+
+// Final review per condition that is still unconfirmed (AI flagged but not reviewed) for the site.
+const pendingReviews = (row: CompletedRow, condition: 'any' | 'infiltration' | 'phlebitis') => {
+  const latest = row.latest_analysis;
+  if (!latest || latest.review_status !== 'pending_review') return 0;
+  const missing = (['infiltration', 'phlebitis'] as const).filter((c) => !latest.conditions[c].review);
+  return condition === 'any' ? missing.length : missing.filter((c) => c === condition).length;
+};
 
 export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,64 +38,47 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
   const [showRoundsHistory, setShowRoundsHistory] = useState(false);
   const [showPatientDetail, setShowPatientDetail] = useState(false);
 
-  const completedItems = [
-    {
-      id: '1',
-      patientName: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      site: 'หลังมือซ้าย',
-      vein: 'เข็ม #1 · Cephalic vein',
-      duration: '0 / 168 ชั่วโมง',
-      inspectionDetail: 'ตรวจแล้ว 0 · ข้าม 0 รอบ',
-      statusText: 'ปิดการติดตาม'
-    },
-    {
-      id: '2',
-      patientName: 'ชื่อ-นามสกุลคนไข้',
-      hnAn: 'HN34567890 · AN26080918',
-      hisConfirmed: true,
-      site: 'หลังมือซ้าย',
-      vein: 'เข็ม #1 · Cephalic vein',
-      duration: '36 / 168 ชั่วโมง',
-      inspectionDetail: 'ตรวจแล้ว 16 · ข้าม 1 รอบ',
-      statusText: 'ปิดการติดตาม'
-    }
-  ];
+  const completed = useApi(() => api.get<CompletedRow[]>('/api/tracking-completed'), []);
+
+  const completedItems = (completed.data ?? []).map((source) => {
+    const early = source.elapsed_hours < source.duration_hours;
+    return {
+      id: String(source.id),
+      source,
+      early,
+      patientName: source.patient.full_name,
+      hnAn: hnAn(source.patient),
+      hisConfirmed: false,
+      site: source.location,
+      vein: `${source.label} · ${source.vein}`,
+      duration: `${Math.floor(source.elapsed_hours)} / ${source.duration_hours} ชั่วโมง`,
+      inspectionDetail: `ตรวจแล้ว ${source.completed_rounds} · ข้าม ${source.skipped_rounds} · พลาด ${source.missed_rounds} รอบ`,
+      statusText: early ? 'สิ้นสุดก่อนกำหนด' : 'ครบ 168 ชั่วโมง'
+    };
+  });
+  const fullCount = completedItems.filter((i) => !i.early).length;
+  const earlyCount = completedItems.filter((i) => i.early).length;
 
   const filteredItems = completedItems.filter((item) => {
     const matchesSearch =
       item.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.hnAn.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.site.toLowerCase().includes(searchQuery.toLowerCase());
+    if (statusFilter === 'early') return matchesSearch && item.early;
+    if (statusFilter === 'full') return matchesSearch && !item.early;
     return matchesSearch;
   });
 
-  if (showPatientDetail) {
+  if (showPatientDetail || showRoundsHistory) {
     return (
       <SinglePatientDetail
-        patientName={selectedSummaryItem?.patientName || 'ชื่อ-นามสกุล-คนไข้'}
-        hnAn={selectedSummaryItem?.hnAn || 'HN56789012 · AN26081004'}
-        onBack={() => setShowPatientDetail(false)}
-        onViewSummaryReport={() => setShowPatientDetail(false)}
-        onViewGradeHistory={() => {
+        patientId={selectedSummaryItem?.source.patient.id}
+        onBack={() => {
           setShowPatientDetail(false);
-          setShowRoundsHistory(true);
+          setShowRoundsHistory(false);
         }}
-        onViewTrackingHistory={() => {
-          setShowPatientDetail(false);
-          setShowRoundsHistory(true);
-        }}
-      />
-    );
-  }
-
-  if (showRoundsHistory) {
-    return (
-      <PatientRoundsHistory
-        patientName={selectedSummaryItem?.patientName || 'ชื่อ-นามสกุล-คนไข้'}
-        hnAn={selectedSummaryItem?.hnAn || 'HN56789012 · AN26081004'}
-        onBack={() => setShowRoundsHistory(false)}
+        onViewSummaryReport={() => onNavigate?.('reports')}
+        onViewGradeHistory={() => onNavigate?.('history')}
       />
     );
   }
@@ -103,7 +97,7 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
           </button>
 
           <h1 className="text-2xl sm:text-[30px] font-bold text-slate-900 tracking-tight">
-            สรุปการสิ้นสุดก่อนกำหนด
+            {selectedSummaryItem.early ? 'สรุปการสิ้นสุดก่อนกำหนด' : 'สรุปการติดตามครบกำหนด'}
           </h1>
         </div>
 
@@ -116,21 +110,21 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
             <div className="space-y-1">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-bold text-slate-900 leading-snug">
-                  {selectedSummaryItem.patientName || 'ชื่อ-นามสกุล-คนไข้'}
+                  {selectedSummaryItem.patientName}
                 </h2>
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E6F4EA] text-[#10B981] font-semibold text-[11px]">
-                  <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
-                  <span>ยืนยันจาก HIS</span>
+                  <span>{selectedSummaryItem.source.label} · {selectedSummaryItem.site}</span>
                 </span>
               </div>
               <div className="text-[13px] text-slate-500 font-medium">
-                HN56789012 · AN26081004 · 4 ปี 8 เดือน · เพศหญิง
+                {selectedSummaryItem.hnAn}
+                {selectedSummaryItem.source.patient.age_text ? ` · ${selectedSummaryItem.source.patient.age_text}` : ''}
               </div>
               <div className="text-[12px] text-slate-400 font-normal flex items-center gap-3 flex-wrap pt-0.5">
-                <span>🏢 PICU</span>
-                <span>ห้อง A-01</span>
-                <span>🛏️ เตียง C32</span>
-                <span>🩺 ชื่อ-นามสกุลแพทย์เจ้าของไข้</span>
+                <span>🏢 {selectedSummaryItem.source.patient.ward}</span>
+                <span>{selectedSummaryItem.source.patient.room ?? '-'}</span>
+                <span>🛏️ {selectedSummaryItem.source.patient.bed ?? '-'}</span>
+                <span>สิ้นสุด {fmtDateTime(selectedSummaryItem.source.ended_at)}</span>
               </div>
             </div>
           </div>
@@ -144,7 +138,7 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-bold text-[#065F46] leading-tight">
-                สิ้นสุดการติดตามก่อนกำหนด · ผู้ป่วยจำหน่ายกลับบ้าน
+                {selectedSummaryItem.early ? 'สิ้นสุดการติดตามก่อนกำหนด · ผู้ป่วยจำหน่ายกลับบ้าน' : 'ติดตามครบ 168 ชั่วโมง'}
               </h3>
               <p className="text-[13px] text-[#059669] font-normal mt-0.5">
                 ชั่วโมงและรอบของทุก IV Site ถูกหยุดตามเวลาที่จำหน่าย โดยไม่ปรับยอดให้ครบ 168 ชั่วโมง
@@ -165,49 +159,49 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs">
             <span className="text-[12px] text-slate-500 font-medium block">กำหนดตรวจทั้งหมด</span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              0 <span className="text-[13px] font-normal text-slate-500">รอบ</span>
+              {selectedSummaryItem.source.total_rounds} <span className="text-[13px] font-normal text-slate-500">รอบ</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs">
             <span className="text-[12px] text-slate-500 font-medium block">ดำเนินการตรวจแล้ว</span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              0 <span className="text-[13px] font-normal text-slate-500">รอบ</span>
+              {selectedSummaryItem.source.completed_rounds} <span className="text-[13px] font-normal text-slate-500">รอบ</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs">
             <span className="text-[12px] text-slate-500 font-medium block">ข้ามรอบ</span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              0 <span className="text-[13px] font-normal text-slate-500">รอบ</span>
+              {selectedSummaryItem.source.skipped_rounds} <span className="text-[13px] font-normal text-slate-500">รอบ</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs">
-            <span className="text-[12px] text-slate-500 font-medium block">เกินกำหนด</span>
+            <span className="text-[12px] text-slate-500 font-medium block">ไม่ได้ตรวจตามรอบ</span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              0 <span className="text-[13px] font-normal text-slate-500">รอบ</span>
+              {selectedSummaryItem.source.missed_rounds} <span className="text-[13px] font-normal text-slate-500">รอบ</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs">
             <span className="text-[12px] text-slate-500 font-medium block">ผล AI รอการทบทวน</span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              0 <span className="text-[13px] font-normal text-slate-500">ครั้ง</span>
+              {pendingReviews(selectedSummaryItem.source, 'any')} <span className="text-[13px] font-normal text-slate-500">ครั้ง</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs">
             <span className="text-[12px] text-slate-500 font-medium block">Infiltration รอการทบทวน</span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              0 <span className="text-[13px] font-normal text-slate-500">ครั้ง</span>
+              {pendingReviews(selectedSummaryItem.source, 'infiltration')} <span className="text-[13px] font-normal text-slate-500">ครั้ง</span>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-2xs">
             <span className="text-[12px] text-slate-500 font-medium block">Phlebitis รอการทบทวน</span>
             <div className="text-2xl font-bold text-slate-900 mt-1">
-              0 <span className="text-[13px] font-normal text-slate-500">ครั้ง</span>
+              {pendingReviews(selectedSummaryItem.source, 'phlebitis')} <span className="text-[13px] font-normal text-slate-500">ครั้ง</span>
             </div>
           </div>
         </div>
@@ -296,7 +290,7 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
             </div>
             <div>
               <div className="text-2xl sm:text-[28px] font-bold text-slate-900 leading-none">
-                0
+                {fullCount}
               </div>
             </div>
           </div>
@@ -313,12 +307,12 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
             </div>
             <div>
               <div className="text-2xl sm:text-[28px] font-bold text-slate-900 leading-none">
-                2
+                {earlyCount}
               </div>
             </div>
           </div>
           <span className="text-[13px] text-slate-500 font-medium">
-            ผู้ป่วยสิ้นสุดก่อนกำหนด
+            IV Site สิ้นสุดก่อนกำหนด
           </span>
         </div>
 
@@ -330,7 +324,7 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
             </div>
             <div>
               <div className="text-2xl sm:text-[28px] font-bold text-slate-900 leading-none">
-                2
+                {completedItems.length}
               </div>
             </div>
           </div>
@@ -363,7 +357,7 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
                 className="appearance-none pl-3.5 pr-9 py-2 rounded-xl border border-slate-200 text-[13px] bg-white text-slate-700 font-medium focus:outline-none focus:border-blue-500 cursor-pointer shadow-2xs"
               >
                 <option value="all">สถานะ: ทั้งหมด</option>
-                <option value="completed">ครบกำหนด 168 ชม.</option>
+                <option value="full">ครบกำหนด 168 ชม.</option>
                 <option value="early">สิ้นสุดก่อนกำหนด</option>
               </select>
               <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -440,18 +434,7 @@ export const CompletedTracking: React.FC<CompletedTrackingProps> = ({ onNavigate
 
         {/* Table Pagination Footer */}
         <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>Showing 10 of 10 Historical Log</div>
-          <div className="flex items-center gap-1.5">
-            <button className="px-3.5 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 font-medium text-slate-600 cursor-pointer shadow-2xs">
-              Previous
-            </button>
-            <button className="w-8 h-8 bg-[#1E58E6] text-white font-bold rounded-lg flex items-center justify-center shadow-2xs cursor-pointer">
-              1
-            </button>
-            <button className="w-8 h-8 border border-slate-200 text-slate-600 font-medium rounded-lg flex items-center justify-center bg-white hover:bg-slate-50 shadow-2xs cursor-pointer">
-              2
-            </button>
-          </div>
+          <div>{completed.loading ? 'กำลังโหลด...' : completed.error ? completed.error : `ทั้งหมด ${filteredItems.length} รายการ`}</div>
         </div>
       </div>
 
